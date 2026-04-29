@@ -12,7 +12,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->statefulApi();
+        // ใช้ Bearer token mode ไม่ใช่ SPA stateful → ไม่ต้องเปิด statefulApi()
+        // $middleware->statefulApi();
         $middleware->alias([
             'permission' => \App\Http\Middleware\CheckPermission::class,
             'role'       => \App\Http\Middleware\CheckRole::class,
