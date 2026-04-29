@@ -28,7 +28,6 @@ return [
 
     'max_age' => 0,
 
-    // true = ส่ง cookie ข้ามโดเมนได้ (จำเป็นถ้าใช้ Sanctum SPA mode)
-    // ถ้าใช้ Bearer token อย่างเดียวจะตั้ง false ก็ได้ แต่เปิดไว้ปลอดภัยกว่า
-    'supports_credentials' => true,
+    // Bearer token mode → ไม่ต้องส่ง cookie ข้ามโดเมน
+    'supports_credentials' => false,
 ];
