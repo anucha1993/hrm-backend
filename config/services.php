@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'labour' => [
+        'base_url' => env('LABOUR_API_BASE_URL', 'https://charoenmunconcrete.net'),
+        'key'      => env('LABOUR_API_KEY'),
+        'timeout'  => (int) env('LABOUR_API_TIMEOUT', 15),
+    ],
+
 ];

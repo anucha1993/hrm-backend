@@ -1,0 +1,145 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Employee;
+use App\Models\EmployeeDocument;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
+
+class EmployeeController extends Controller
+{
+    private const RELATIONS = ['department', 'country', 'employmentType', 'documents'];
+
+    public function index(Request $request): JsonResponse
+    {
+        $q = Employee::with(self::RELATIONS)->orderBy('id', 'desc');
+
+        if ($s = $request->string('search')->toString()) {
+            $q->where(function ($w) use ($s) {
+                $w->where('employee_code', 'like', "%{$s}%")
+                  ->orWhere('first_name', 'like', "%{$s}%")
+                  ->orWhere('last_name', 'like', "%{$s}%")
+                  ->orWhere('national_id', 'like', "%{$s}%")
+                  ->orWhere('phone', 'like', "%{$s}%");
+            });
+        }
+        if ($id = $request->integer('department_id'))      $q->where('department_id', $id);
+        if ($id = $request->integer('employment_type_id')) $q->where('employment_type_id', $id);
+        if ($status = $request->string('status')->toString()) $q->where('status', $status);
+
+        return response()->json(['data' => $q->paginate($request->integer('per_page', 20))]);
+    }
+
+    public function show(Employee $employee): JsonResponse
+    {
+        return response()->json(['data' => $employee->load(self::RELATIONS)]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $data = $this->validateData($request);
+
+        return DB::transaction(function () use ($request, $data) {
+            $employee = Employee::create($data);
+            $this->saveDocuments($request, $employee);
+            return response()->json(['data' => $employee->load(self::RELATIONS)], 201);
+        });
+    }
+
+    public function update(Request $request, Employee $employee): JsonResponse
+    {
+        $data = $this->validateData($request, $employee->id);
+
+        return DB::transaction(function () use ($request, $data, $employee) {
+            $employee->update($data);
+
+            // ลบเอกสารตาม id ที่ส่งมา
+            $deleteIds = $request->input('delete_document_ids', []);
+            if (is_array($deleteIds) && count($deleteIds) > 0) {
+                $docs = $employee->documents()->whereIn('id', $deleteIds)->get();
+                foreach ($docs as $doc) {
+                    Storage::disk('public')->delete($doc->file_path);
+                    $doc->delete();
+                }
+            }
+
+            $this->saveDocuments($request, $employee);
+
+            return response()->json(['data' => $employee->load(self::RELATIONS)]);
+        });
+    }
+
+    public function destroy(Employee $employee): JsonResponse
+    {
+        $employee->delete();
+        return response()->json(['message' => 'ลบเรียบร้อย']);
+    }
+
+    private function validateData(Request $request, ?int $id = null): array
+    {
+        return $request->validate([
+            'employee_code'   => ['required', 'string', 'max:50', Rule::unique('employees', 'employee_code')->ignore($id)],
+            'title'           => ['required', Rule::in(['นาย', 'นางสาว', 'นาง'])],
+            'first_name'      => ['required', 'string', 'max:255'],
+            'last_name'       => ['required', 'string', 'max:255'],
+            'nickname'        => ['nullable', 'string', 'max:255'],
+            'birth_date'      => ['required', 'date', 'before:today'],
+            'gender'          => ['required', Rule::in(['M', 'F', 'Other'])],
+            'phone'           => ['nullable', 'string', 'max:15'],
+            'email'           => ['nullable', 'email', Rule::unique('employees', 'email')->ignore($id)],
+            'address'         => ['nullable', 'string'],
+            'national_id'     => ['required', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/', Rule::unique('employees', 'national_id')->ignore($id)],
+            'marital_status'  => ['nullable', 'string', 'max:50'],
+            'religion'        => ['nullable', 'string', 'max:50'],
+            'education_level' => ['nullable', 'string', 'max:100'],
+
+            'country_id'         => ['nullable', 'exists:countries,id'],
+            'department_id'      => ['nullable', 'exists:departments,id'],
+            'employment_type_id' => ['nullable', 'exists:employment_types,id'],
+
+            'position'    => ['nullable', 'string', 'max:255'],
+            'hire_date'   => ['nullable', 'date'],
+            'resign_date' => ['nullable', 'date', 'after_or_equal:hire_date'],
+            'base_salary' => ['nullable', 'numeric', 'min:0'],
+
+            'bank_name'         => ['nullable', 'string', 'max:255'],
+            'bank_account_no'   => ['nullable', 'string', 'max:30'],
+            'bank_account_name' => ['nullable', 'string', 'max:255'],
+
+            'emergency_contact_name'     => ['nullable', 'string', 'max:255'],
+            'emergency_contact_relation' => ['nullable', 'string', 'max:100'],
+            'emergency_contact_phone'    => ['nullable', 'string', 'max:15'],
+
+            'status' => ['required', Rule::in(['active', 'resigned', 'terminated', 'suspended'])],
+            'note'   => ['nullable', 'string'],
+
+            'documents'   => ['nullable', 'array'],
+            'documents.*' => ['file', 'max:10240'], // 10MB
+
+            'delete_document_ids'   => ['nullable', 'array'],
+            'delete_document_ids.*' => ['integer'],
+        ]);
+    }
+
+    private function saveDocuments(Request $request, Employee $employee): void
+    {
+        if (! $request->hasFile('documents')) return;
+
+        foreach ($request->file('documents') as $file) {
+            if (! $file || ! $file->isValid()) continue;
+            $path = $file->store("employees/{$employee->id}/documents", 'public');
+            $employee->documents()->create([
+                'name'          => $file->getClientOriginalName(),
+                'file_path'     => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type'     => $file->getMimeType(),
+                'size'          => $file->getSize(),
+            ]);
+        }
+    }
+}
