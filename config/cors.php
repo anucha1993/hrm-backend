@@ -15,12 +15,13 @@ return [
     'allowed_origins' => array_filter([
         env('FRONTEND_URL'),
         env('FRONTEND_URL_2'),
-        // เพิ่มโดเมน dev สำหรับเรียกจาก localhost
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
     ]),
 
-    'allowed_origins_patterns' => [],
+    // อนุญาตทุก localhost / 127.0.0.1 ทุก port สำหรับ dev
+    'allowed_origins_patterns' => [
+        '#^https?://localhost(:[0-9]+)?$#',
+        '#^https?://127\.0\.0\.1(:[0-9]+)?$#',
+    ],
 
     'allowed_headers' => ['*'],
 
