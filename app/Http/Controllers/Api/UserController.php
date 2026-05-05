@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +25,17 @@ class UserController extends Controller
 
         if ($roleId = $request->integer('role_id')) {
             $q->where('role_id', $roleId);
+        }
+
+        // ดึงเฉพาะ users ที่ยังไม่ผูกกับ employee และเป็น role=employee เท่านั้น
+        // ส่ง except_employee_id เพื่อรวม user ของ employee ที่กำลังแก้ไขด้วย
+        if ($request->boolean('available_for_employee')) {
+            $exceptEmpId = $request->integer('except_employee_id');
+            $usedUserIds = Employee::whereNotNull('user_id')
+                ->when($exceptEmpId, fn ($w) => $w->where('id', '!=', $exceptEmpId))
+                ->pluck('user_id');
+            $q->whereNotIn('id', $usedUserIds)
+              ->whereHas('role', fn ($r) => $r->where('name', Role::EMPLOYEE));
         }
 
         return response()->json([

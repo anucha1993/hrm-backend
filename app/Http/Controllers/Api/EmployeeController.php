@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +15,7 @@ use Illuminate\Validation\Rule;
 
 class EmployeeController extends Controller
 {
-    private const RELATIONS = ['department', 'country', 'employmentType', 'documents'];
+    private const RELATIONS = ['department', 'country', 'employmentType', 'documents', 'user'];
 
     public function index(Request $request): JsonResponse
     {
@@ -45,6 +47,7 @@ class EmployeeController extends Controller
         $data = $this->validateData($request);
 
         return DB::transaction(function () use ($request, $data) {
+            $data = $this->ensureUserAccount($data, null);
             $employee = Employee::create($data);
             $this->saveDocuments($request, $employee);
             return response()->json(['data' => $employee->load(self::RELATIONS)], 201);
@@ -56,6 +59,7 @@ class EmployeeController extends Controller
         $data = $this->validateData($request, $employee->id);
 
         return DB::transaction(function () use ($request, $data, $employee) {
+            $data = $this->ensureUserAccount($data, $employee);
             $employee->update($data);
 
             // ลบเอกสารตาม id ที่ส่งมา
@@ -92,6 +96,8 @@ class EmployeeController extends Controller
             'gender'          => ['required', Rule::in(['M', 'F', 'Other'])],
             'phone'           => ['nullable', 'string', 'max:15'],
             'email'           => ['nullable', 'email', Rule::unique('employees', 'email')->ignore($id)],
+
+            'user_id'         => ['nullable', 'integer', Rule::unique('employees', 'user_id')->ignore($id), 'exists:users,id'],
             'address'         => ['nullable', 'string'],
             'national_id'     => ['required', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/', Rule::unique('employees', 'national_id')->ignore($id)],
             'marital_status'  => ['nullable', 'string', 'max:50'],
@@ -124,6 +130,67 @@ class EmployeeController extends Controller
             'delete_document_ids'   => ['nullable', 'array'],
             'delete_document_ids.*' => ['integer'],
         ]);
+    }
+
+    /**
+     * สร้าง/อัปเดตบัญชี User ของพนักงานแบบอัตโนมัติ
+     * - Username (email) = "{employee_code}@cyc-hrm.local"
+     * - Password         = national_id (เลข ปปช./พาสปอร์ต)
+     * - Role             = employee
+     *
+     * เมื่อแก้ไข: ถ้า employee_code หรือ national_id เปลี่ยน จะ sync ไปที่บัญชี User ที่ผูกอยู่
+     */
+    private function ensureUserAccount(array $data, ?Employee $employee): array
+    {
+        $employeeCode = $data['employee_code'] ?? $employee?->employee_code;
+        $nationalId   = $data['national_id']   ?? $employee?->national_id;
+
+        if (! $employeeCode || ! $nationalId) {
+            return $data;
+        }
+
+        $employeeRole = Role::where('name', Role::EMPLOYEE)->first();
+        if (! $employeeRole) {
+            return $data; // ไม่มี role employee ในระบบ → ข้าม
+        }
+
+        $syntheticEmail = strtolower($employeeCode) . '@cyc-hrm.local';
+        $fullName = trim(($data['first_name'] ?? $employee?->first_name ?? '') . ' ' . ($data['last_name'] ?? $employee?->last_name ?? ''));
+        $existingUserId = $employee?->user_id ?? ($data['user_id'] ?? null);
+
+        if ($existingUserId && $user = User::find($existingUserId)) {
+            // sync ข้อมูลถ้าเปลี่ยน
+            $update = [
+                'name'    => $fullName ?: $user->name,
+                'email'   => $syntheticEmail,
+                'role_id' => $user->role_id ?: $employeeRole->id,
+            ];
+            // ถ้า national_id เปลี่ยน → อัปเดต password
+            if ($employee && isset($data['national_id']) && $data['national_id'] !== $employee->national_id) {
+                $update['password'] = $nationalId;
+            }
+            $user->fill($update)->save();
+            $data['user_id'] = $user->id;
+            return $data;
+        }
+
+        // ถ้า email สังเคราะห์นี้ถูกใช้ไปแล้วโดย user อื่น (เช่น สร้างซ้ำ) → ผูกกับ user เดิม
+        $existing = User::where('email', $syntheticEmail)->first();
+        if ($existing) {
+            $data['user_id'] = $existing->id;
+            return $data;
+        }
+
+        $user = User::create([
+            'name'      => $fullName ?: $employeeCode,
+            'email'     => $syntheticEmail,
+            'password'  => $nationalId, // hashed อัตโนมัติผ่าน cast 'hashed' ใน User model
+            'role_id'   => $employeeRole->id,
+            'is_active' => true,
+        ]);
+
+        $data['user_id'] = $user->id;
+        return $data;
     }
 
     private function saveDocuments(Request $request, Employee $employee): void

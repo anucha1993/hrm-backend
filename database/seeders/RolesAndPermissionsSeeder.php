@@ -38,8 +38,9 @@ class RolesAndPermissionsSeeder extends Seeder
                 'labours.view' => 'ดูข้อมูลแรงงานต่างด้าว (Labour API)',
             ],
             'attendance' => [
-                'attendance.view'   => 'ดูเวลางาน',
-                'attendance.manage' => 'จัดการเวลางาน',
+                'attendance.checkin' => 'ลงเวลาเข้า-ออก',
+                'attendance.view'    => 'ดูประวัติเวลางาน (รวมพนักงานทุกคน)',
+                'attendance.manage'  => 'จัดการเวลางาน (สถานที่/กะ/แก้ไขข้อมูล)',
             ],
             'tasks' => [
                 'tasks.view'   => 'ดูงาน',
@@ -83,6 +84,10 @@ class RolesAndPermissionsSeeder extends Seeder
             ['name' => Role::MEMBER],
             ['display_name' => 'Member', 'description' => 'ผู้ใช้งานทั่วไป', 'is_system' => true]
         );
+        $employee = Role::updateOrCreate(
+            ['name' => Role::EMPLOYEE],
+            ['display_name' => 'Employee', 'description' => 'พนักงาน (ลงเวลา/ดูประวัติของตน)', 'is_system' => true]
+        );
 
         // Super admin มีทุก permission
         $superAdmin->permissions()->sync(collect($allPermissions)->pluck('id')->all());
@@ -98,6 +103,7 @@ class RolesAndPermissionsSeeder extends Seeder
         // Member: ดูข้อมูลพื้นฐาน + งาน + เวลางานของตน
         $memberPerms = [
             'employees.view',
+            'attendance.checkin',
             'attendance.view',
             'tasks.view',
             'payroll.view',
@@ -105,6 +111,14 @@ class RolesAndPermissionsSeeder extends Seeder
         ];
         $member->permissions()->sync(
             collect($memberPerms)->map(fn ($n) => $allPermissions[$n]->id)->all()
+        );
+
+        // Employee: เฉพาะลงเวลาเข้า-ออก ของตนเอง
+        $employeePerms = [
+            'attendance.checkin',
+        ];
+        $employee->permissions()->sync(
+            collect($employeePerms)->map(fn ($n) => $allPermissions[$n]->id)->all()
         );
 
         // Default Super Admin

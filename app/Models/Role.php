@@ -14,6 +14,7 @@ class Role extends Model
     public const SUPER_ADMIN = 'super_admin';
     public const ADMIN       = 'admin';
     public const MEMBER      = 'member';
+    public const EMPLOYEE    = 'employee';
 
     protected $fillable = [
         'name',

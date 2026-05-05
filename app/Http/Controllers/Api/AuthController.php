@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,16 +16,28 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'email'    => ['required', 'email'],
+            'email'    => ['required', 'string'],
             'password' => ['required', 'string'],
         ]);
 
+        $identifier = trim($data['email']);
+
         /** @var User|null $user */
-        $user = User::with('role.permissions')->where('email', $data['email'])->first();
+        $user = User::with('role.permissions')
+            ->where('email', $identifier)
+            ->first();
+
+        // ถ้าไม่เจอจาก email ลองค้นจากรหัสพนักงาน (employee_code)
+        if (! $user) {
+            $employee = Employee::where('employee_code', $identifier)->first();
+            if ($employee && $employee->user_id) {
+                $user = User::with('role.permissions')->find($employee->user_id);
+            }
+        }
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             throw ValidationException::withMessages([
-                'email' => ['อีเมลหรือรหัสผ่านไม่ถูกต้อง'],
+                'email' => ['ชื่อผู้ใช้/อีเมล หรือรหัสผ่านไม่ถูกต้อง'],
             ]);
         }
 

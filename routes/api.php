@@ -1,13 +1,16 @@
 <?php
 
+use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CountryController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmploymentTypeController;
 use App\Http\Controllers\Api\LabourController;
+use App\Http\Controllers\Api\OfficeLocationController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WorkShiftController;
 use Illuminate\Support\Facades\Route;
 
 // Public
@@ -66,5 +69,30 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/labours', [LabourController::class, 'index']);
         Route::get('/labours/passport/{passport}', [LabourController::class, 'showByPassport']);
         Route::get('/labours/{id}', [LabourController::class, 'show'])->whereNumber('id');
+    });
+
+    // Attendance: ลงเวลาเข้า-ออก (พนักงานทุกคนที่มี attendance.checkin)
+    Route::middleware('permission:attendance.checkin')->group(function () {
+        Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
+        Route::get('/attendance/today', [AttendanceController::class, 'todayStatus']);
+        Route::get('/attendance/my-history', [AttendanceController::class, 'myHistory']);
+    });
+
+    // Attendance: ดูรวม / จัดการ
+    Route::middleware('permission:attendance.view')->get('/attendance', [AttendanceController::class, 'index']);
+
+    // Attendance master data (สถานที่ + กะ)
+    Route::middleware('permission:attendance.view')->group(function () {
+        Route::get('/office-locations', [OfficeLocationController::class, 'index']);
+        Route::get('/work-shifts', [WorkShiftController::class, 'index']);
+    });
+    Route::middleware('permission:attendance.manage')->group(function () {
+        Route::post('/office-locations', [OfficeLocationController::class, 'store']);
+        Route::put('/office-locations/{officeLocation}', [OfficeLocationController::class, 'update']);
+        Route::delete('/office-locations/{officeLocation}', [OfficeLocationController::class, 'destroy']);
+
+        Route::post('/work-shifts', [WorkShiftController::class, 'store']);
+        Route::put('/work-shifts/{workShift}', [WorkShiftController::class, 'update']);
+        Route::delete('/work-shifts/{workShift}', [WorkShiftController::class, 'destroy']);
     });
 });
