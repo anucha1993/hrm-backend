@@ -67,6 +67,28 @@ class AuthController extends Controller
         return response()->json(['message' => 'ออกจากระบบเรียบร้อย']);
     }
 
+    public function changePassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'current_password'         => ['required', 'string'],
+            'password'                 => ['required', 'string', 'min:6', 'max:255', 'confirmed'],
+            'password_confirmation'    => ['required', 'string'],
+        ]);
+
+        /** @var User $user */
+        $user = $request->user();
+        if (! Hash::check($data['current_password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['รหัสผ่านปัจจุบันไม่ถูกต้อง'],
+            ]);
+        }
+
+        $user->password = $data['password']; // hashed อัตโนมัติผ่าน cast
+        $user->save();
+
+        return response()->json(['message' => 'เปลี่ยนรหัสผ่านเรียบร้อย']);
+    }
+
     private function formatUser(User $user): array
     {
         return [
