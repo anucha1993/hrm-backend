@@ -30,7 +30,7 @@ class Attendance extends Model
 
     public function getPhotoUrlAttribute(): ?string
     {
-        return $this->photo_path ? Storage::url($this->photo_path) : null;
+        return $this->photo_path ? asset(Storage::url($this->photo_path)) : null;
     }
 
     public function employee(): BelongsTo
