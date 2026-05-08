@@ -1,13 +1,23 @@
 <?php
 
 use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\Attendance\AttendanceSummaryController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\Leave\LeaveRequestController;
+use App\Http\Controllers\Api\Leave\LeaveTypeController;
 use App\Http\Controllers\Api\CountryController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmploymentTypeController;
 use App\Http\Controllers\Api\LabourController;
 use App\Http\Controllers\Api\OfficeLocationController;
+use App\Http\Controllers\Api\Payroll\CompensationComponentController;
+use App\Http\Controllers\Api\Payroll\CompensationProfileController;
+use App\Http\Controllers\Api\Payroll\EmployeePayrollController;
+use App\Http\Controllers\Api\Payroll\OtSessionController;
+use App\Http\Controllers\Api\Payroll\PayrollPeriodController;
+use App\Http\Controllers\Api\Payroll\PayrollSlipController;
+use App\Http\Controllers\Api\Payroll\TaxSettingController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WorkShiftController;
@@ -95,5 +105,127 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/work-shifts', [WorkShiftController::class, 'store']);
         Route::put('/work-shifts/{workShift}', [WorkShiftController::class, 'update']);
         Route::delete('/work-shifts/{workShift}', [WorkShiftController::class, 'destroy']);
+
+        // แก้ไข/เพิ่ม/ลบ Attendance ย้อนหลัง (HR/Admin)
+        Route::post('/attendance/manual', [AttendanceController::class, 'storeManual']);
+        Route::patch('/attendance/{attendance}', [AttendanceController::class, 'update']);
+        Route::delete('/attendance/{attendance}', [AttendanceController::class, 'destroy']);
+        Route::get('/attendance/{attendance}/audit-logs', [AttendanceController::class, 'auditLogs']);
+    });
+
+    /* ========================= PAYROLL ========================= */
+    // ตั้งค่าระบบเงินเดือน (HR/Admin)
+    Route::middleware('permission:payroll.config')->group(function () {
+        Route::get('/payroll/profiles', [CompensationProfileController::class, 'index']);
+        Route::get('/payroll/profiles/{profile}', [CompensationProfileController::class, 'show']);
+        Route::post('/payroll/profiles', [CompensationProfileController::class, 'store']);
+        Route::put('/payroll/profiles/{profile}', [CompensationProfileController::class, 'update']);
+        Route::delete('/payroll/profiles/{profile}', [CompensationProfileController::class, 'destroy']);
+
+        Route::get('/payroll/components', [CompensationComponentController::class, 'index']);
+        Route::post('/payroll/components', [CompensationComponentController::class, 'store']);
+        Route::get('/payroll/components/{component}', [CompensationComponentController::class, 'show']);
+        Route::put('/payroll/components/{component}', [CompensationComponentController::class, 'update']);
+        Route::delete('/payroll/components/{component}', [CompensationComponentController::class, 'destroy']);
+
+        Route::get('/payroll/tax/brackets', [TaxSettingController::class, 'brackets']);
+        Route::put('/payroll/tax/brackets', [TaxSettingController::class, 'syncBrackets']);
+        Route::get('/payroll/tax/profiles', [TaxSettingController::class, 'profiles']);
+        Route::get('/payroll/tax/profiles/{taxProfile}', [TaxSettingController::class, 'showProfile']);
+        Route::post('/payroll/tax/profiles', [TaxSettingController::class, 'storeProfile']);
+        Route::put('/payroll/tax/profiles/{taxProfile}', [TaxSettingController::class, 'updateProfile']);
+        Route::delete('/payroll/tax/profiles/{taxProfile}', [TaxSettingController::class, 'destroyProfile']);
+
+        // employee-level setup
+        Route::get('/payroll/employees/{employee}', [EmployeePayrollController::class, 'show']);
+        Route::post('/payroll/employees/{employee}/compensations', [EmployeePayrollController::class, 'storeCompensation']);
+        Route::put('/payroll/employees/{employee}/compensations/{compensation}', [EmployeePayrollController::class, 'updateCompensation']);
+        Route::delete('/payroll/employees/{employee}/compensations/{compensation}', [EmployeePayrollController::class, 'destroyCompensation']);
+        Route::post('/payroll/employees/{employee}/components', [EmployeePayrollController::class, 'storeComponent']);
+        Route::put('/payroll/employees/{employee}/components/{component}', [EmployeePayrollController::class, 'updateComponent']);
+        Route::delete('/payroll/employees/{employee}/components/{component}', [EmployeePayrollController::class, 'destroyComponent']);
+        Route::put('/payroll/employees/{employee}/tax-setting', [EmployeePayrollController::class, 'upsertTaxSetting']);
+    });
+
+    // OT management (HR)
+    Route::middleware('permission:payroll.ot_manage')->group(function () {
+        Route::get('/payroll/ot-sessions', [OtSessionController::class, 'index']);
+        Route::post('/payroll/ot-sessions', [OtSessionController::class, 'store']);
+        Route::get('/payroll/ot-sessions/{otSession}', [OtSessionController::class, 'show']);
+        Route::put('/payroll/ot-sessions/{otSession}', [OtSessionController::class, 'update']);
+        Route::delete('/payroll/ot-sessions/{otSession}', [OtSessionController::class, 'destroy']);
+    });
+
+    // Period CRUD (HR)
+    Route::middleware('permission:payroll.compute')->group(function () {
+        Route::get('/payroll/periods', [PayrollPeriodController::class, 'index']);
+        Route::post('/payroll/periods', [PayrollPeriodController::class, 'store']);
+        Route::get('/payroll/periods/{period}', [PayrollPeriodController::class, 'show']);
+        Route::put('/payroll/periods/{period}', [PayrollPeriodController::class, 'update']);
+        Route::delete('/payroll/periods/{period}', [PayrollPeriodController::class, 'destroy']);
+        Route::post('/payroll/periods/{period}/compute', [PayrollPeriodController::class, 'compute']);
+    });
+
+    // Slip — ดู (any with payroll.view)
+    Route::middleware('permission:payroll.view')->group(function () {
+        Route::get('/payroll/slips', [PayrollSlipController::class, 'index']);
+        Route::get('/payroll/slips/{slip}', [PayrollSlipController::class, 'show']);
+    });
+
+    // Slip — submit/cancel/delete (HR)
+    Route::middleware('permission:payroll.compute')->group(function () {
+        Route::delete('/payroll/slips/{slip}', [PayrollSlipController::class, 'destroy']);
+        Route::post('/payroll/slips/{slip}/submit-l1', [PayrollSlipController::class, 'submitL1']);
+        Route::post('/payroll/slips/{slip}/cancel', [PayrollSlipController::class, 'cancel']);
+    });
+
+    // Approve L1 (Manager)
+    Route::middleware('permission:payroll.approve_l1')->group(function () {
+        Route::post('/payroll/slips/{slip}/approve-l1', [PayrollSlipController::class, 'approveL1']);
+        Route::post('/payroll/slips/{slip}/reject-l1', [PayrollSlipController::class, 'rejectL1']);
+    });
+
+    // Approve L2 + จ่ายเงิน (Owner)
+    Route::middleware('permission:payroll.approve_l2')->group(function () {
+        Route::post('/payroll/slips/{slip}/approve-l2', [PayrollSlipController::class, 'approveL2']);
+        Route::post('/payroll/slips/{slip}/reject-l2', [PayrollSlipController::class, 'rejectL2']);
+    });
+    Route::middleware('permission:payroll.pay')->group(function () {
+        Route::post('/payroll/slips/{slip}/mark-paid', [PayrollSlipController::class, 'markPaid']);
+    });
+
+    // bulk action — ตรวจสิทธิ์ใน controller ตาม action
+    Route::middleware('permission:payroll.view')->post('/payroll/slips/bulk', [PayrollSlipController::class, 'bulkAction']);
+
+    /* ========================= LEAVE ========================= */
+    // Leave types — config (HR)
+    Route::get('/leave/types', [LeaveTypeController::class, 'index']); // ทุกคนเห็น list สำหรับยื่นขอ
+    Route::middleware('permission:leave.config')->group(function () {
+        Route::post('/leave/types', [LeaveTypeController::class, 'store']);
+        Route::get('/leave/types/{leaveType}', [LeaveTypeController::class, 'show']);
+        Route::put('/leave/types/{leaveType}', [LeaveTypeController::class, 'update']);
+        Route::delete('/leave/types/{leaveType}', [LeaveTypeController::class, 'destroy']);
+        Route::put('/leave/balances', [LeaveRequestController::class, 'updateBalance']);
+    });
+
+    // Leave requests — ทุกคนยื่นได้ + ดูของตนเอง
+    Route::middleware('permission:leave.request')->group(function () {
+        Route::get('/leave/requests', [LeaveRequestController::class, 'index']);
+        Route::get('/leave/requests/{leaveRequest}', [LeaveRequestController::class, 'show']);
+        Route::post('/leave/requests', [LeaveRequestController::class, 'store']);
+        Route::post('/leave/requests/{leaveRequest}/cancel', [LeaveRequestController::class, 'cancel']);
+        Route::get('/leave/balances', [LeaveRequestController::class, 'balances']);
+    });
+
+    Route::middleware('permission:leave.approve')->group(function () {
+        Route::post('/leave/requests/{leaveRequest}/approve', [LeaveRequestController::class, 'approve']);
+        Route::post('/leave/requests/{leaveRequest}/reject', [LeaveRequestController::class, 'reject']);
+    });
+
+    /* ========================= ATTENDANCE SUMMARY ========================= */
+    Route::middleware('permission:attendance.checkin')->group(function () {
+        // ทุกคน: ดูสรุปของตัวเอง (controller จะ enforce)
+        Route::get('/attendance/summary', [AttendanceSummaryController::class, 'index']);
+        Route::get('/attendance/summary/{employee}/daily', [AttendanceSummaryController::class, 'daily']);
     });
 });

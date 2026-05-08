@@ -41,15 +41,26 @@ class RolesAndPermissionsSeeder extends Seeder
                 'attendance.checkin' => 'ลงเวลาเข้า-ออก',
                 'attendance.view'    => 'ดูประวัติเวลางาน (รวมพนักงานทุกคน)',
                 'attendance.manage'  => 'จัดการเวลางาน (สถานที่/กะ/แก้ไขข้อมูล)',
+                'attendance.summary.view' => 'ดูสรุปเวลาทำงานรวม',
+            ],
+            'leave' => [
+                'leave.request' => 'ยื่นคำขอลา และดูของตนเอง',
+                'leave.approve' => 'อนุมัติใบลา',
+                'leave.config' => 'ตั้งค่าประเภทการลา / โควต้า',
             ],
             'tasks' => [
                 'tasks.view'   => 'ดูงาน',
                 'tasks.manage' => 'จัดการงาน',
             ],
             'payroll' => [
-                'payroll.view'    => 'ดูเงินเดือน',
-                'payroll.compute' => 'คำนวณเงินเดือน',
-                'payroll.approve' => 'อนุมัติเงินเดือน',
+                'payroll.view'           => 'ดูเงินเดือน',
+                'payroll.compute'        => 'คำนวณเงินเดือน (HR)',
+                'payroll.approve_l1'     => 'อนุมัติขั้นที่ 1 (Manager)',
+                'payroll.approve_l2'     => 'อนุมัติขั้นที่ 2 (Owner)',
+                'payroll.approve'        => 'อนุมัติเงินเดือน (รวม)',
+                'payroll.pay'            => 'บันทึกจ่ายเงินเดือน',
+                'payroll.config'         => 'ตั้งค่าระบบเงินเดือน (Profile/Tax/Component)',
+                'payroll.ot_manage'      => 'จัดการรอบ OT',
             ],
             'reports' => [
                 'reports.view' => 'ดูรายงาน',
@@ -88,6 +99,18 @@ class RolesAndPermissionsSeeder extends Seeder
             ['name' => Role::EMPLOYEE],
             ['display_name' => 'Employee', 'description' => 'พนักงาน (ลงเวลา/ดูประวัติของตน)', 'is_system' => true]
         );
+        $hr = Role::updateOrCreate(
+            ['name' => Role::HR],
+            ['display_name' => 'HR', 'description' => 'ฝ่ายบุคคล (คำนวณเงินเดือน)', 'is_system' => true]
+        );
+        $manager = Role::updateOrCreate(
+            ['name' => Role::MANAGER],
+            ['display_name' => 'Manager', 'description' => 'ผู้จัดการ (อนุมัติขั้นที่ 1)', 'is_system' => true]
+        );
+        $owner = Role::updateOrCreate(
+            ['name' => Role::OWNER],
+            ['display_name' => 'Owner', 'description' => 'เจ้าของ/กรรมการ (อนุมัติขั้นสุดท้าย + จ่าย)', 'is_system' => true]
+        );
 
         // Super admin มีทุก permission
         $superAdmin->permissions()->sync(collect($allPermissions)->pluck('id')->all());
@@ -107,18 +130,61 @@ class RolesAndPermissionsSeeder extends Seeder
             'attendance.view',
             'tasks.view',
             'payroll.view',
+            'leave.request',
             'reports.view',
         ];
         $member->permissions()->sync(
             collect($memberPerms)->map(fn ($n) => $allPermissions[$n]->id)->all()
         );
 
-        // Employee: เฉพาะลงเวลาเข้า-ออก ของตนเอง
+        // Employee: ลงเวลา + ยื่นลา + ดูสลิปตนเอง
         $employeePerms = [
             'attendance.checkin',
+            'leave.request',
+            'payroll.view',
         ];
         $employee->permissions()->sync(
             collect($employeePerms)->map(fn ($n) => $allPermissions[$n]->id)->all()
+        );
+
+        // HR: จัดการพนักงาน + คำนวณเงินเดือน + OT + ตั้งค่าระบบเงินเดือน
+        $hrPerms = [
+            'employees.view', 'employees.create', 'employees.update',
+            'attendance.view', 'attendance.manage', 'attendance.summary.view',
+            'payroll.view', 'payroll.compute', 'payroll.config', 'payroll.ot_manage',
+            'leave.request', 'leave.approve', 'leave.config',
+            'reports.view',
+            'master_data.manage',
+        ];
+        $hr->permissions()->sync(
+            collect($hrPerms)->filter(fn ($n) => isset($allPermissions[$n]))
+                ->map(fn ($n) => $allPermissions[$n]->id)->all()
+        );
+
+        // Manager: อนุมัติขั้นที่ 1
+        $managerPerms = [
+            'employees.view',
+            'attendance.view', 'attendance.summary.view',
+            'payroll.view', 'payroll.approve_l1',
+            'leave.request', 'leave.approve',
+            'reports.view',
+        ];
+        $manager->permissions()->sync(
+            collect($managerPerms)->filter(fn ($n) => isset($allPermissions[$n]))
+                ->map(fn ($n) => $allPermissions[$n]->id)->all()
+        );
+
+        // Owner: อนุมัติขั้นสุดท้าย + บันทึกจ่าย
+        $ownerPerms = [
+            'employees.view',
+            'attendance.view', 'attendance.summary.view',
+            'payroll.view', 'payroll.approve_l1', 'payroll.approve_l2', 'payroll.approve', 'payroll.pay',
+            'leave.request', 'leave.approve',
+            'reports.view',
+        ];
+        $owner->permissions()->sync(
+            collect($ownerPerms)->filter(fn ($n) => isset($allPermissions[$n]))
+                ->map(fn ($n) => $allPermissions[$n]->id)->all()
         );
 
         // Default Super Admin

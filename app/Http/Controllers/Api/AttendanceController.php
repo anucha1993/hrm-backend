@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
+use App\Models\AttendanceAuditLog;
 use App\Models\Employee;
 use App\Models\EmployeeShift;
 use App\Models\OfficeLocation;
@@ -171,6 +172,180 @@ class AttendanceController extends Controller
         if ($to   = $request->date('to'))   $q->where('checked_at', '<=', $to->endOfDay());
 
         return response()->json(['data' => $q->paginate($request->integer('per_page', 30))]);
+    }
+
+    /**
+     * HR/Admin: เพิ่มเวลาย้อนหลัง (manual entry) — สำหรับเคสลืมลงเวลา/ระบบมีปัญหา
+     */
+    public function storeManual(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'employee_id' => ['required', 'exists:employees,id'],
+            'type'        => ['required', 'in:check_in,check_out'],
+            'checked_at'  => ['required', 'date'],
+            'work_shift_id'      => ['nullable', 'exists:work_shifts,id'],
+            'office_location_id' => ['nullable', 'exists:office_locations,id'],
+            'status'      => ['nullable', 'in:normal,late,early_leave,overtime'],
+            'late_minutes'=> ['nullable', 'integer', 'min:0'],
+            'reason'      => ['required', 'string', 'min:5', 'max:500'],
+            'note'        => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $checkedAt = Carbon::parse($data['checked_at']);
+        $employee  = Employee::findOrFail($data['employee_id']);
+
+        $exists = Attendance::where('employee_id', $employee->id)
+            ->where('type', $data['type'])
+            ->whereBetween('checked_at', [$checkedAt->copy()->subMinute(), $checkedAt->copy()->addMinute()])
+            ->exists();
+        if ($exists) {
+            return response()->json(['message' => 'มีบันทึกเวลาในช่วงเวลาเดียวกันอยู่แล้ว'], 422);
+        }
+
+        $shiftId = $data['work_shift_id'] ?? null;
+        $shift = $shiftId ? WorkShift::find($shiftId) : $this->resolveShift($employee, $checkedAt);
+        $status = $data['status'] ?? 'normal';
+        $lateMinutes = $data['late_minutes'] ?? null;
+
+        if (! isset($data['status']) && $shift) {
+            if ($data['type'] === 'check_in') {
+                $shiftStart = Carbon::parse($checkedAt->format('Y-m-d') . ' ' . $shift->start_time);
+                $diff = $checkedAt->diffInMinutes($shiftStart, false);
+                if ($diff < -intval($shift->late_grace_minutes ?? 0)) {
+                    $status = 'late';
+                    $lateMinutes = abs($diff);
+                }
+            } elseif ($data['type'] === 'check_out') {
+                $shiftEnd = Carbon::parse($checkedAt->format('Y-m-d') . ' ' . $shift->end_time);
+                if ($checkedAt->lt($shiftEnd)) $status = 'early_leave';
+                elseif ($checkedAt->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
+            }
+        }
+
+        $attendance = Attendance::create([
+            'employee_id'        => $employee->id,
+            'type'               => $data['type'],
+            'checked_at'         => $checkedAt,
+            'office_location_id' => $data['office_location_id'] ?? null,
+            'work_shift_id'      => $shift?->id,
+            'status'             => $status,
+            'late_minutes'       => $lateMinutes,
+            'note'               => $data['note'] ?? null,
+            'source'             => 'manual',
+            'is_edited'          => true,
+            'edited_by'          => Auth::id(),
+            'edited_at'          => now(),
+            'edit_reason'        => $data['reason'],
+        ]);
+
+        AttendanceAuditLog::create([
+            'attendance_id' => $attendance->id,
+            'employee_id'   => $employee->id,
+            'action'        => 'create',
+            'old_values'    => null,
+            'new_values'    => $attendance->only([
+                'type', 'checked_at', 'status', 'late_minutes',
+                'work_shift_id', 'office_location_id', 'note',
+            ]),
+            'reason'        => $data['reason'],
+            'user_id'       => Auth::id(),
+        ]);
+
+        return response()->json([
+            'data' => $attendance->load(['employee:id,employee_code,first_name,last_name', 'workShift', 'officeLocation', 'editor:id,name']),
+            'message' => 'เพิ่มเวลาย้อนหลังเรียบร้อย',
+        ], 201);
+    }
+
+    /**
+     * HR/Admin: แก้ไข attendance ที่มีอยู่ + บันทึก audit log
+     */
+    public function update(Request $request, Attendance $attendance): JsonResponse
+    {
+        $data = $request->validate([
+            'type'         => ['sometimes', 'in:check_in,check_out'],
+            'checked_at'   => ['sometimes', 'date'],
+            'status'       => ['sometimes', 'in:normal,late,early_leave,overtime'],
+            'late_minutes' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'work_shift_id'      => ['sometimes', 'nullable', 'exists:work_shifts,id'],
+            'office_location_id' => ['sometimes', 'nullable', 'exists:office_locations,id'],
+            'note'         => ['sometimes', 'nullable', 'string', 'max:500'],
+            'reason'       => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+
+        $oldValues = $attendance->only([
+            'type', 'checked_at', 'status', 'late_minutes',
+            'work_shift_id', 'office_location_id', 'note',
+        ]);
+
+        $attendance->fill(collect($data)->except('reason')->toArray());
+        $attendance->is_edited = true;
+        $attendance->edited_by = Auth::id();
+        $attendance->edited_at = now();
+        $attendance->edit_reason = $data['reason'];
+        $attendance->save();
+
+        $newValues = $attendance->only([
+            'type', 'checked_at', 'status', 'late_minutes',
+            'work_shift_id', 'office_location_id', 'note',
+        ]);
+
+        AttendanceAuditLog::create([
+            'attendance_id' => $attendance->id,
+            'employee_id'   => $attendance->employee_id,
+            'action'        => 'update',
+            'old_values'    => $oldValues,
+            'new_values'    => $newValues,
+            'reason'        => $data['reason'],
+            'user_id'       => Auth::id(),
+        ]);
+
+        return response()->json([
+            'data' => $attendance->fresh(['employee:id,employee_code,first_name,last_name', 'workShift', 'officeLocation', 'editor:id,name']),
+            'message' => 'แก้ไขเวลาเรียบร้อย',
+        ]);
+    }
+
+    /**
+     * HR/Admin: ลบ attendance + บันทึก log
+     */
+    public function destroy(Request $request, Attendance $attendance): JsonResponse
+    {
+        $reason = $request->validate([
+            'reason' => ['required', 'string', 'min:5', 'max:500'],
+        ])['reason'];
+
+        AttendanceAuditLog::create([
+            'attendance_id' => $attendance->id,
+            'employee_id'   => $attendance->employee_id,
+            'action'        => 'delete',
+            'old_values'    => $attendance->only([
+                'type', 'checked_at', 'status', 'late_minutes',
+                'work_shift_id', 'office_location_id', 'note',
+            ]),
+            'new_values'    => null,
+            'reason'        => $reason,
+            'user_id'       => Auth::id(),
+        ]);
+
+        if ($attendance->photo_path && Storage::disk('public')->exists($attendance->photo_path)) {
+            Storage::disk('public')->delete($attendance->photo_path);
+        }
+        $attendance->delete();
+
+        return response()->json(['message' => 'ลบเวลาเรียบร้อย']);
+    }
+
+    /**
+     * HR/Admin: ดูประวัติการแก้ไข
+     */
+    public function auditLogs(Attendance $attendance): JsonResponse
+    {
+        $logs = AttendanceAuditLog::with('user:id,name')
+            ->where('attendance_id', $attendance->id)
+            ->orderByDesc('id')
+            ->get();
+        return response()->json(['data' => $logs]);
     }
 
     private function resolveEmployee(Request $request): ?Employee

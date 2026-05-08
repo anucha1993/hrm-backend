@@ -18,6 +18,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RolesAndPermissionsSeeder::class,
             MasterDataSeeder::class,
+            PayrollDefaultsSeeder::class,
+            LeaveTypesSeeder::class,
         ]);
     }
 }
