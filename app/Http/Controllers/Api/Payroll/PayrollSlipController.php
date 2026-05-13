@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Api\Payroll;
 
+use App\Exports\PayrollSlipsExport;
 use App\Http\Controllers\Controller;
 use App\Models\PayrollSlip;
 use App\Services\Payroll\PayrollApprovalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PayrollSlipController extends Controller
 {
@@ -30,6 +33,24 @@ class PayrollSlipController extends Controller
             $q->where('employee_id', $userEmpId ?? -1);
         }
         return response()->json(['data' => $q->paginate($request->integer('per_page', 20))]);
+    }
+
+    /**
+     * GET /payroll/slips/export
+     */
+    public function export(Request $request): BinaryFileResponse
+    {
+        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name', 'period:id,name,code,start_date,end_date,pay_date'])
+            ->orderByDesc('id');
+        if ($pid = $request->integer('period_id')) $q->where('payroll_period_id', $pid);
+        if ($eid = $request->integer('employee_id')) $q->where('employee_id', $eid);
+        if ($s = $request->string('status')->toString()) $q->where('status', $s);
+        if ($request->boolean('mine')) {
+            $userEmpId = optional($request->user()->employee)->id;
+            $q->where('employee_id', $userEmpId ?? -1);
+        }
+        $records = $q->limit(50000)->get();
+        return Excel::download(new PayrollSlipsExport($records), 'payroll-slips-' . now()->format('Ymd-Hi') . '.xlsx');
     }
 
     public function show(PayrollSlip $slip, Request $request): JsonResponse

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Attendance;
 
+use App\Exports\AttendanceDailyExport;
+use App\Exports\AttendanceSummaryExport;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\Employee;
@@ -11,6 +13,8 @@ use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AttendanceSummaryController extends Controller
 {
@@ -21,6 +25,25 @@ class AttendanceSummaryController extends Controller
      * Return per-employee monthly summary
      */
     public function index(Request $request): JsonResponse
+    {
+        $result = $this->buildSummary($request);
+        return response()->json(['data' => $result]);
+    }
+
+    /**
+     * GET /attendance/summary/export?month=YYYY-MM&department_id=&employee_id=
+     */
+    public function export(Request $request): BinaryFileResponse
+    {
+        $result = $this->buildSummary($request);
+        $filename = 'attendance-summary-' . ($result['period']['start'] ?? now()->format('Y-m-d')) . '-to-' . ($result['period']['end'] ?? '') . '.xlsx';
+        return Excel::download(
+            new AttendanceSummaryExport($result['rows']->toArray(), $result['period'], $result['totals']),
+            $filename
+        );
+    }
+
+    protected function buildSummary(Request $request): array
     {
         $data = $request->validate([
             'month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
@@ -95,24 +118,22 @@ class AttendanceSummaryController extends Controller
             ];
         });
 
-        return response()->json([
-            'data' => [
-                'period' => [
-                    'start' => $start->toDateString(),
-                    'end' => $end->toDateString(),
-                    'total_days' => $totalDays,
-                ],
-                'rows' => $rows,
-                'totals' => [
-                    'employees' => $rows->count(),
-                    'present_days' => $rows->sum('present_days'),
-                    'absent_days' => $rows->sum('absent_days'),
-                    'leave_days' => $rows->sum('leave_days'),
-                    'late_count' => $rows->sum('late_count'),
-                    'ot_hours' => $rows->sum('ot_hours'),
-                ],
+        return [
+            'period' => [
+                'start' => $start->toDateString(),
+                'end' => $end->toDateString(),
+                'total_days' => $totalDays,
             ],
-        ]);
+            'rows' => $rows,
+            'totals' => [
+                'employees' => $rows->count(),
+                'present_days' => $rows->sum('present_days'),
+                'absent_days' => $rows->sum('absent_days'),
+                'leave_days' => $rows->sum('leave_days'),
+                'late_count' => $rows->sum('late_count'),
+                'ot_hours' => $rows->sum('ot_hours'),
+            ],
+        ];
     }
 
     /**
@@ -120,6 +141,25 @@ class AttendanceSummaryController extends Controller
      * Daily breakdown สำหรับพนักงานคนเดียว
      */
     public function daily(Employee $employee, Request $request): JsonResponse
+    {
+        $result = $this->buildDaily($employee, $request);
+        return response()->json(['data' => $result]);
+    }
+
+    /**
+     * GET /attendance/summary/{employee}/daily/export?month=YYYY-MM
+     */
+    public function dailyExport(Employee $employee, Request $request): BinaryFileResponse
+    {
+        $result = $this->buildDaily($employee, $request);
+        $filename = 'attendance-daily-' . ($result['employee']['employee_code'] ?? $employee->id) . '-' . $result['month'] . '.xlsx';
+        return Excel::download(
+            new AttendanceDailyExport($result['employee'], $result['month'], $result['days']),
+            $filename
+        );
+    }
+
+    protected function buildDaily(Employee $employee, Request $request): array
     {
         $month = $request->input('month') ?: now()->format('Y-m');
         $start = Carbon::parse($month . '-01')->startOfMonth();
@@ -188,17 +228,15 @@ class AttendanceSummaryController extends Controller
             ];
         }
 
-        return response()->json([
-            'data' => [
-                'employee' => [
-                    'id' => $employee->id,
-                    'employee_code' => $employee->employee_code,
-                    'first_name' => $employee->first_name,
-                    'last_name' => $employee->last_name,
-                ],
-                'month' => $month,
-                'days' => $days,
+        return [
+            'employee' => [
+                'id' => $employee->id,
+                'employee_code' => $employee->employee_code,
+                'first_name' => $employee->first_name,
+                'last_name' => $employee->last_name,
             ],
-        ]);
+            'month' => $month,
+            'days' => $days,
+        ];
     }
 }

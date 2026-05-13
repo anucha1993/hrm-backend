@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Payroll;
 
+use App\Exports\OtSessionsExport;
 use App\Http\Controllers\Controller;
 use App\Models\OtSession;
 use App\Models\OtSessionEmployee;
@@ -9,6 +10,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class OtSessionController extends Controller
 {
@@ -23,6 +26,16 @@ class OtSessionController extends Controller
             $q->whereDate('ot_date', '<=', $to);
         }
         return response()->json(['data' => $q->paginate($request->integer('per_page', 20))]);
+    }
+
+    public function export(Request $request): BinaryFileResponse
+    {
+        $q = OtSession::with(['employees.employee:id,employee_code,first_name,last_name'])
+            ->orderByDesc('ot_date');
+        if ($from = $request->date('from')) $q->whereDate('ot_date', '>=', $from);
+        if ($to = $request->date('to')) $q->whereDate('ot_date', '<=', $to);
+        $records = $q->limit(10000)->get();
+        return Excel::download(new OtSessionsExport($records), 'ot-sessions-' . now()->format('Ymd-Hi') . '.xlsx');
     }
 
     public function show(OtSession $otSession): JsonResponse

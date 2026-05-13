@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exports\AttendanceHistoryExport;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
@@ -14,6 +15,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AttendanceController extends Controller
 {
@@ -175,8 +178,20 @@ class AttendanceController extends Controller
     }
 
     /**
-     * HR/Admin: เพิ่มเวลาย้อนหลัง (manual entry) — สำหรับเคสลืมลงเวลา/ระบบมีปัญหา
+     * GET /attendance/export — Excel
      */
+    public function export(Request $request): BinaryFileResponse
+    {
+        $q = Attendance::with(['employee:id,employee_code,first_name,last_name', 'officeLocation'])
+            ->orderBy('checked_at', 'desc');
+        if ($id = $request->integer('employee_id')) $q->where('employee_id', $id);
+        if ($type = $request->string('type')->toString()) $q->where('type', $type);
+        if ($from = $request->date('from')) $q->where('checked_at', '>=', $from);
+        if ($to   = $request->date('to'))   $q->where('checked_at', '<=', $to->endOfDay());
+        $records = $q->limit(50000)->get();
+        $filename = 'attendance-history-' . now()->format('Ymd-Hi') . '.xlsx';
+        return Excel::download(new AttendanceHistoryExport($records), $filename);
+    }
     public function storeManual(Request $request): JsonResponse
     {
         $data = $request->validate([

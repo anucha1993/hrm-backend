@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Leave;
 
+use App\Exports\LeaveRequestsExport;
 use App\Http\Controllers\Controller;
 use App\Models\LeaveBalance;
 use App\Models\LeaveRequest;
@@ -10,6 +11,8 @@ use App\Services\Leave\LeaveService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class LeaveRequestController extends Controller
 {
@@ -44,6 +47,29 @@ class LeaveRequestController extends Controller
         }
 
         return response()->json(['data' => $q->paginate($request->integer('per_page', 20))]);
+    }
+
+    /**
+     * GET /leave/requests/export
+     */
+    public function export(Request $request): BinaryFileResponse
+    {
+        $user = $request->user();
+        $q = LeaveRequest::with(['employee:id,employee_code,first_name,last_name', 'leaveType', 'reviewer:id,name'])
+            ->orderByDesc('id');
+        if (! $user->hasPermission('leave.approve') && ! $user->hasPermission('leave.config')) {
+            $q->where('employee_id', optional($user->employee)->id ?? -1);
+        } elseif ($eid = $request->integer('employee_id')) {
+            $q->where('employee_id', $eid);
+        } elseif ($request->boolean('mine')) {
+            $q->where('employee_id', optional($user->employee)->id ?? -1);
+        }
+        if ($s = $request->string('status')->toString()) $q->where('status', $s);
+        if ($tid = $request->integer('leave_type_id')) $q->where('leave_type_id', $tid);
+        if ($from = $request->date('from')) $q->where('end_date', '>=', $from);
+        if ($to = $request->date('to')) $q->where('start_date', '<=', $to);
+        $records = $q->limit(50000)->get();
+        return Excel::download(new LeaveRequestsExport($records), 'leave-requests-' . now()->format('Ymd-Hi') . '.xlsx');
     }
 
     public function show(LeaveRequest $leaveRequest, Request $request): JsonResponse

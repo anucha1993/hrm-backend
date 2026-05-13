@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Payroll\EmployeePayrollController;
 use App\Http\Controllers\Api\Payroll\OtSessionController;
 use App\Http\Controllers\Api\Payroll\PayrollPeriodController;
 use App\Http\Controllers\Api\Payroll\PayrollSlipController;
+use App\Http\Controllers\Api\Payroll\ProductionRateController;
 use App\Http\Controllers\Api\Payroll\TaxSettingController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
@@ -91,6 +92,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Attendance: ดูรวม / จัดการ
     Route::middleware('permission:attendance.view')->get('/attendance', [AttendanceController::class, 'index']);
+    Route::middleware('permission:attendance.view')->get('/attendance/export', [AttendanceController::class, 'export']);
 
     // Attendance master data (สถานที่ + กะ)
     Route::middleware('permission:attendance.view')->group(function () {
@@ -147,9 +149,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/payroll/employees/{employee}/tax-setting', [EmployeePayrollController::class, 'upsertTaxSetting']);
     });
 
+    // Production rate items (เรทค่าจ้างรายสินค้า / piecework)
+    Route::middleware('permission:payroll.view')->get('/payroll/production-rates', [ProductionRateController::class, 'index']);
+    Route::middleware('permission:payroll.view')->get('/payroll/production-rates/{item}', [ProductionRateController::class, 'show']);
+    Route::middleware('permission:payroll.config')->group(function () {
+        Route::post('/payroll/production-rates', [ProductionRateController::class, 'store']);
+        Route::put('/payroll/production-rates/{item}', [ProductionRateController::class, 'update']);
+        Route::delete('/payroll/production-rates/{item}', [ProductionRateController::class, 'destroy']);
+    });
+
     // OT management (HR)
     Route::middleware('permission:payroll.ot_manage')->group(function () {
         Route::get('/payroll/ot-sessions', [OtSessionController::class, 'index']);
+        Route::get('/payroll/ot-sessions/export', [OtSessionController::class, 'export']);
         Route::post('/payroll/ot-sessions', [OtSessionController::class, 'store']);
         Route::get('/payroll/ot-sessions/{otSession}', [OtSessionController::class, 'show']);
         Route::put('/payroll/ot-sessions/{otSession}', [OtSessionController::class, 'update']);
@@ -169,6 +181,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Slip — ดู (any with payroll.view)
     Route::middleware('permission:payroll.view')->group(function () {
         Route::get('/payroll/slips', [PayrollSlipController::class, 'index']);
+        Route::get('/payroll/slips/export', [PayrollSlipController::class, 'export']);
         Route::get('/payroll/slips/{slip}', [PayrollSlipController::class, 'show']);
     });
 
@@ -211,6 +224,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Leave requests — ทุกคนยื่นได้ + ดูของตนเอง
     Route::middleware('permission:leave.request')->group(function () {
         Route::get('/leave/requests', [LeaveRequestController::class, 'index']);
+        Route::get('/leave/requests/export', [LeaveRequestController::class, 'export']);
         Route::get('/leave/requests/{leaveRequest}', [LeaveRequestController::class, 'show']);
         Route::post('/leave/requests', [LeaveRequestController::class, 'store']);
         Route::post('/leave/requests/{leaveRequest}/cancel', [LeaveRequestController::class, 'cancel']);
@@ -226,6 +240,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:attendance.checkin')->group(function () {
         // ทุกคน: ดูสรุปของตัวเอง (controller จะ enforce)
         Route::get('/attendance/summary', [AttendanceSummaryController::class, 'index']);
+        Route::get('/attendance/summary/export', [AttendanceSummaryController::class, 'export']);
         Route::get('/attendance/summary/{employee}/daily', [AttendanceSummaryController::class, 'daily']);
+        Route::get('/attendance/summary/{employee}/daily/export', [AttendanceSummaryController::class, 'dailyExport']);
     });
 });
