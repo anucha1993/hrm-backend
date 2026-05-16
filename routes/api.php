@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Payroll\EmployeePayrollController;
 use App\Http\Controllers\Api\Payroll\OtSessionController;
 use App\Http\Controllers\Api\Payroll\PayrollPeriodController;
 use App\Http\Controllers\Api\Payroll\PayrollSlipController;
+use App\Http\Controllers\Api\Payroll\WorkOrderController;
 use App\Http\Controllers\Api\Payroll\ProductionRateController;
 use App\Http\Controllers\Api\Payroll\TaxSettingController;
 use App\Http\Controllers\Api\RoleController;
@@ -156,6 +157,22 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payroll/production-rates', [ProductionRateController::class, 'store']);
         Route::put('/payroll/production-rates/{item}', [ProductionRateController::class, 'update']);
         Route::delete('/payroll/production-rates/{item}', [ProductionRateController::class, 'destroy']);
+    });
+
+    // Work orders (ใบจ่ายงาน)
+    Route::middleware('permission:payroll.view')->group(function () {
+        Route::get('/payroll/work-orders', [WorkOrderController::class, 'index']);
+        Route::get('/payroll/work-orders/summary', [WorkOrderController::class, 'summary']);
+        Route::get('/payroll/work-orders/{workOrder}', [WorkOrderController::class, 'show']);
+    });
+    Route::middleware('permission:payroll.config')->group(function () {
+        Route::post('/payroll/work-orders', [WorkOrderController::class, 'store']);
+        Route::put('/payroll/work-orders/{workOrder}', [WorkOrderController::class, 'update']);
+        Route::delete('/payroll/work-orders/{workOrder}', [WorkOrderController::class, 'destroy']);
+        Route::post('/payroll/work-orders/{workOrder}/daily-entries', [WorkOrderController::class, 'storeDailyEntry']);
+        Route::put('/payroll/work-orders/{workOrder}/daily-entries/{dailyEntry}', [WorkOrderController::class, 'updateDailyEntry']);
+        Route::delete('/payroll/work-orders/{workOrder}/daily-entries/{dailyEntry}', [WorkOrderController::class, 'destroyDailyEntry']);
+        Route::post('/payroll/work-orders/import-to-payroll', [WorkOrderController::class, 'importToPayroll']);
     });
 
     // OT management (HR)
