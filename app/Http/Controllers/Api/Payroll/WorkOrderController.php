@@ -43,6 +43,7 @@ class WorkOrderController extends Controller
             'items.rateItem',
             'members.employee',
             'dailyEntries.items',
+            'extraItems',
             'creator',
         ]);
         return response()->json(['data' => $workOrder]);
@@ -66,6 +67,7 @@ class WorkOrderController extends Controller
             ]);
             $this->saveItems($wo, $data['items']);
             $this->saveMembers($wo, $data['members'] ?? []);
+            $this->saveExtras($wo, $data['extras'] ?? []);
             $wo->recalculate();
             return $wo;
         });
@@ -102,6 +104,11 @@ class WorkOrderController extends Controller
             if (isset($data['members'])) {
                 $workOrder->members()->delete();
                 $this->saveMembers($workOrder, $data['members']);
+            }
+
+            if (isset($data['extras'])) {
+                $workOrder->extraItems()->delete();
+                $this->saveExtras($workOrder, $data['extras']);
             }
 
             $workOrder->recalculate();
@@ -317,6 +324,12 @@ class WorkOrderController extends Controller
             'members.*.employee_id' => ['required', 'exists:employees,id'],
             'members.*.role' => ['nullable', 'string', 'max:50'],
             'members.*.note' => ['nullable', 'string', 'max:255'],
+            'extras' => ['sometimes', 'array'],
+            'extras.*.name' => ['required_with:extras', 'string', 'max:255'],
+            'extras.*.unit' => ['nullable', 'string', 'max:50'],
+            'extras.*.qty' => ['required_with:extras', 'numeric', 'min:0'],
+            'extras.*.rate' => ['required_with:extras', 'numeric', 'min:0'],
+            'extras.*.note' => ['nullable', 'string', 'max:500'],
         ]);
     }
 
@@ -364,6 +377,23 @@ class WorkOrderController extends Controller
                 'employee_id' => $empId,
                 'role' => $m['role'] ?? null,
                 'note' => $m['note'] ?? null,
+            ]);
+        }
+    }
+
+    private function saveExtras(WorkOrder $wo, array $extras): void
+    {
+        foreach (array_values($extras) as $idx => $e) {
+            $qty = (float) ($e['qty'] ?? 0);
+            $rate = (float) ($e['rate'] ?? 0);
+            $wo->extraItems()->create([
+                'name' => $e['name'],
+                'unit' => $e['unit'] ?? null,
+                'qty' => $qty,
+                'rate' => $rate,
+                'amount' => round($qty * $rate, 2),
+                'note' => $e['note'] ?? null,
+                'sort_order' => $idx,
             ]);
         }
     }

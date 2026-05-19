@@ -49,6 +49,11 @@ class WorkOrder extends Model
         return $this->hasMany(WorkOrderDailyEntry::class)->orderBy('work_date');
     }
 
+    public function extraItems(): HasMany
+    {
+        return $this->hasMany(WorkOrderExtraItem::class)->orderBy('sort_order');
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -61,7 +66,7 @@ class WorkOrder extends Model
      */
     public function recalculate(): void
     {
-        $this->load(['items.rateItem', 'items.dailyEntryItems']);
+        $this->load(['items.rateItem', 'items.dailyEntryItems', 'extraItems']);
 
         foreach ($this->items as $item) {
             $item->actual_qty_total = $item->dailyEntryItems->sum('actual_qty');
@@ -69,7 +74,12 @@ class WorkOrder extends Model
             $item->recompute();
         }
 
-        $this->total_amount = $this->items->sum('total_amount');
+        foreach ($this->extraItems as $extra) {
+            $extra->recompute();
+            $extra->save();
+        }
+
+        $this->total_amount = $this->items->sum('total_amount') + $this->extraItems->sum('amount');
         $this->save();
     }
 
