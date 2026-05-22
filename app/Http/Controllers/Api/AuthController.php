@@ -49,6 +49,8 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth-token')->plainTextToken;
 
+        $user->load('employee:id,user_id');
+
         return response()->json([
             'token' => $token,
             'user'  => $this->formatUser($user),
@@ -57,7 +59,7 @@ class AuthController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user()->load('role.permissions');
+        $user = $request->user()->load(['role.permissions', 'employee:id,user_id']);
         return response()->json(['user' => $this->formatUser($user)]);
     }
 
@@ -102,6 +104,7 @@ class AuthController extends Controller
                 'display_name' => $user->role->display_name,
             ] : null,
             'permissions' => $user->getPermissionNames(),
+            'employee_id' => $user->employee?->id,
         ];
     }
 }

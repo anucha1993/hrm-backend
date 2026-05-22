@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\Payroll\WorkOrderController;
 use App\Http\Controllers\Api\Payroll\ProductionRateController;
 use App\Http\Controllers\Api\Payroll\TaxSettingController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WorkShiftController;
 use Illuminate\Support\Facades\Route;
@@ -260,5 +261,25 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/attendance/summary/export', [AttendanceSummaryController::class, 'export']);
         Route::get('/attendance/summary/{employee}/daily', [AttendanceSummaryController::class, 'daily']);
         Route::get('/attendance/summary/{employee}/daily/export', [AttendanceSummaryController::class, 'dailyExport']);
+    });
+
+    /* ========================= TASKS (มอบหมายงาน) ========================= */
+    // อ่าน + ของตนเอง (controller filter ตามสิทธิ์)
+    Route::middleware('permission:tasks.view')->group(function () {
+        Route::get('/tasks', [TaskController::class, 'index']);
+        Route::get('/tasks/summary', [TaskController::class, 'summary']);
+        Route::get('/tasks/{task}', [TaskController::class, 'show']);
+        // ผู้รับงานอัปโหลดรูป + ส่งงาน
+        Route::post('/tasks/{task}/assignees/{assignee}/photo', [TaskController::class, 'uploadPhoto']);
+        Route::post('/tasks/{task}/assignees/{assignee}/submit', [TaskController::class, 'submit']);
+    });
+
+    // จัดการ (admin)
+    Route::middleware('permission:tasks.manage')->group(function () {
+        Route::post('/tasks', [TaskController::class, 'store']);
+        Route::put('/tasks/{task}', [TaskController::class, 'update']);
+        Route::delete('/tasks/{task}', [TaskController::class, 'destroy']);
+        Route::post('/tasks/{task}/assignees/{assignee}/rate', [TaskController::class, 'rate']);
+        Route::post('/tasks/{task}/assignees/{assignee}/reject', [TaskController::class, 'reject']);
     });
 });
