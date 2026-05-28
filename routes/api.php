@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\Payroll\PayrollSlipController;
 use App\Http\Controllers\Api\Payroll\WorkOrderController;
 use App\Http\Controllers\Api\Payroll\ProductionRateController;
 use App\Http\Controllers\Api\Payroll\TaxSettingController;
+use App\Http\Controllers\Api\PayrollRuleController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
@@ -281,5 +283,38 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/tasks/{task}', [TaskController::class, 'destroy']);
         Route::post('/tasks/{task}/assignees/{assignee}/rate', [TaskController::class, 'rate']);
         Route::post('/tasks/{task}/assignees/{assignee}/reject', [TaskController::class, 'reject']);
+    });
+
+    /* ========================= RULES (กฎระเบียบ / หัก-เพิ่มเงิน) ========================= */
+    Route::middleware('permission:settings.view')->group(function () {
+        Route::get('/payroll-rules', [PayrollRuleController::class, 'index']);
+        Route::get('/payroll-rules/meta', [PayrollRuleController::class, 'meta']);
+        Route::get('/payroll-rules/{rule}', [PayrollRuleController::class, 'show']);
+        Route::get('/payroll-settings', [PayrollRuleController::class, 'settingsIndex']);
+    });
+    Route::middleware('permission:settings.manage')->group(function () {
+        Route::post('/payroll-rules', [PayrollRuleController::class, 'store']);
+        Route::put('/payroll-rules/{rule}', [PayrollRuleController::class, 'update']);
+        Route::delete('/payroll-rules/{rule}', [PayrollRuleController::class, 'destroy']);
+        Route::post('/payroll-rules/{rule}/toggle', [PayrollRuleController::class, 'toggle']);
+        Route::put('/payroll-settings', [PayrollRuleController::class, 'settingsBulkUpdate']);
+    });
+
+    /* ========================= REPORTS ========================= */
+    Route::middleware('permission:reports.view')->prefix('reports')->group(function () {
+        Route::get('/payroll/periods', [ReportController::class, 'payrollPeriods']);
+        Route::get('/payroll/summary', [ReportController::class, 'payrollSummary']);
+        Route::get('/payroll/export', [ReportController::class, 'payrollExport']);
+        Route::get('/attendance/summary', [ReportController::class, 'attendanceSummary']);
+        Route::get('/attendance/export', [ReportController::class, 'attendanceExport']);
+        Route::get('/leave/summary', [ReportController::class, 'leaveSummary']);
+        Route::get('/leave/export', [ReportController::class, 'leaveExport']);
+        Route::get('/employees/summary', [ReportController::class, 'employeesSummary']);
+        Route::get('/employees/export', [ReportController::class, 'employeesExport']);
+        Route::get('/ot/summary', [ReportController::class, 'otSummary']);
+        Route::get('/ot/export', [ReportController::class, 'otExport']);
+        Route::get('/tasks/summary', [ReportController::class, 'tasksSummary']);
+        Route::get('/tasks/export', [ReportController::class, 'tasksExport']);
+        Route::get('/payslip/{slip}', [ReportController::class, 'payslipShow']);
     });
 });

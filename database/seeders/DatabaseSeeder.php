@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             RolesAndPermissionsSeeder::class,
             MasterDataSeeder::class,
             PayrollDefaultsSeeder::class,
+            PayrollRulesSeeder::class,
             LeaveTypesSeeder::class,
         ]);
     }

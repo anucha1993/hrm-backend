@@ -12,11 +12,14 @@ class MasterDataSeeder extends Seeder
     public function run(): void
     {
         $departments = [
-            ['code' => 'HR',   'name' => 'ฝ่ายทรัพยากรบุคคล'],
-            ['code' => 'ACC',  'name' => 'ฝ่ายบัญชี'],
-            ['code' => 'IT',   'name' => 'ฝ่ายเทคโนโลยีสารสนเทศ'],
-            ['code' => 'OPS',  'name' => 'ฝ่ายปฏิบัติการ'],
-            ['code' => 'SALE', 'name' => 'ฝ่ายขาย'],
+            ['code' => 'HR',    'name' => 'ฝ่ายบุคคล'],
+            ['code' => 'ACC',   'name' => 'ฝ่ายบัญชีและการเงิน'],
+            ['code' => 'PROD',  'name' => 'ฝ่ายผลิตคอนกรีต'],
+            ['code' => 'POUR',  'name' => 'ฝ่ายเทคอนกรีต'],
+            ['code' => 'LIFT',  'name' => 'ฝ่ายยก/เครน'],
+            ['code' => 'TRANS', 'name' => 'ฝ่ายขนส่ง'],
+            ['code' => 'CLEAN', 'name' => 'ฝ่ายทำความสะอาด'],
+            ['code' => 'QC',    'name' => 'ฝ่ายควบคุมคุณภาพ'],
         ];
         foreach ($departments as $d) {
             Department::updateOrCreate(['code' => $d['code']], $d + ['is_active' => true]);

@@ -180,6 +180,17 @@ class PayrollCalculationService
             }
             $log['rules'] = $ruleLog;
 
+            // 10.5 apply กฎ payroll_rules (ระบบใหม่ — admin ตั้งเองในหน้า /rules)
+            $extra = [
+                'rating_avg' => $this->avgTaskRating($employee, $period),
+            ];
+            $engine = app(RuleEngineService::class);
+            $engineResult = $engine->evaluate($employee, $period, $baseSalary, $att, $otAgg, $extra);
+            $persisted = $engine->persistItems($slip, $engineResult['items'], $order);
+            $bonusTotal += $persisted['bonuses'];
+            $ruleDeductions += $persisted['deductions'];
+            $log['payroll_rules'] = $engineResult['log'];
+
             // 11. หักสายตามวิธีของโปรไฟล์
             $lateDeduction = $this->computeLateDeduction($profile, $att, $hourlyRate, $dailyRate);
             if ($lateDeduction > 0) {
@@ -226,6 +237,21 @@ class PayrollCalculationService
 
             // 16. รวมยอดหัก / net
             $deductionsTotal = round($componentDeductions + $ruleDeductions + $lateDeduction + $absentDeduction, 2);
+
+            // 16.5 apply global caps (max_deduction_percent / min_net_salary)
+            $caps = app(RuleEngineService::class)->applyGlobalCaps($baseSalary, $deductionsTotal);
+            if ($caps['capped']) {
+                $delta = round($deductionsTotal - $caps['adjusted_deductions'], 2);
+                if ($delta > 0) {
+                    $items[] = $this->makeItem(
+                        $slip, 'earning', 'manual', 'CAP-ADJ', 'ปรับ cap หักเงิน: ' . $caps['reason'],
+                        $delta, $order++,
+                    );
+                }
+                $deductionsTotal = $caps['adjusted_deductions'];
+                $log['cap'] = $caps;
+            }
+
             $netPay = round($grossPay - $ssfEmp - $tax - $deductionsTotal, 2);
 
             // 17. update สลิป
@@ -367,6 +393,12 @@ class PayrollCalculationService
                 $q->whereNull('end_date')->orWhere('end_date', '>=', $period->start_date);
             })
             ->get();
+    }
+
+    protected function avgTaskRating(Employee $employee, PayrollPeriod $period): float
+    {
+        // TODO: คำนวณจาก task_assignees เมื่อระบบ task พร้อม ตอนนี้คืน 0
+        return 0.0;
     }
 
     protected function evaluateMetric(string $trigger, array $att, array $ot): float
