@@ -62,6 +62,12 @@ class RolesAndPermissionsSeeder extends Seeder
                 'payroll.config'         => 'ตั้งค่าระบบเงินเดือน (Profile/Tax/Component)',
                 'payroll.ot_manage'      => 'จัดการรอบ OT',
             ],
+            'goods_deposits' => [
+                'goods_deposits.view'   => 'ดูใบมัดจำของใช้ทั่วไป',
+                'goods_deposits.create' => 'เพิ่มใบมัดจำของใช้ทั่วไป',
+                'goods_deposits.update' => 'แก้ไข/ตัดยอดใบมัดจำของใช้ทั่วไป',
+                'goods_deposits.delete' => 'ลบใบมัดจำของใช้ทั่วไป',
+            ],
             'reports' => [
                 'reports.view' => 'ดูรายงาน',
             ],
@@ -155,6 +161,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'leave.request', 'leave.approve', 'leave.config',
             'reports.view',
             'master_data.manage',
+            'goods_deposits.view', 'goods_deposits.create', 'goods_deposits.update', 'goods_deposits.delete',
         ];
         $hr->permissions()->sync(
             collect($hrPerms)->filter(fn ($n) => isset($allPermissions[$n]))
@@ -168,6 +175,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'payroll.view', 'payroll.approve_l1',
             'leave.request', 'leave.approve',
             'reports.view',
+            'goods_deposits.view',
         ];
         $manager->permissions()->sync(
             collect($managerPerms)->filter(fn ($n) => isset($allPermissions[$n]))
@@ -181,6 +189,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'payroll.view', 'payroll.approve_l1', 'payroll.approve_l2', 'payroll.approve', 'payroll.pay',
             'leave.request', 'leave.approve',
             'reports.view',
+            'goods_deposits.view',
         ];
         $owner->permissions()->sync(
             collect($ownerPerms)->filter(fn ($n) => isset($allPermissions[$n]))

@@ -6,9 +6,11 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Leave\LeaveRequestController;
 use App\Http\Controllers\Api\Leave\LeaveTypeController;
 use App\Http\Controllers\Api\CountryController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmploymentTypeController;
+use App\Http\Controllers\Api\GoodsDepositController;
 use App\Http\Controllers\Api\LabourController;
 use App\Http\Controllers\Api\OfficeLocationController;
 use App\Http\Controllers\Api\Payroll\CompensationComponentController;
@@ -36,6 +38,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/me/password', [AuthController::class, 'changePassword']);
+
+    Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
 
     // Users management
     Route::middleware('permission:users.view')->get('/users', [UserController::class, 'index']);
@@ -74,6 +78,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Employees
     Route::middleware('permission:employees.view')->get('/employees', [EmployeeController::class, 'index']);
+    // Import (ต้องอยู่ก่อน /employees/{employee} เพื่อกัน route conflict)
+    Route::middleware('permission:employees.create')->get('/employees/import/template', [\App\Http\Controllers\Api\EmployeeImportController::class, 'template']);
+    Route::middleware('permission:employees.create')->post('/employees/import', [\App\Http\Controllers\Api\EmployeeImportController::class, 'import']);
     Route::middleware('permission:employees.view')->get('/employees/{employee}', [EmployeeController::class, 'show']);
     Route::middleware('permission:employees.create')->post('/employees', [EmployeeController::class, 'store']);
     Route::middleware('permission:employees.update')->post('/employees/{employee}', [EmployeeController::class, 'update']); // POST + _method=PUT for multipart
@@ -298,6 +305,25 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/payroll-rules/{rule}', [PayrollRuleController::class, 'destroy']);
         Route::post('/payroll-rules/{rule}/toggle', [PayrollRuleController::class, 'toggle']);
         Route::put('/payroll-settings', [PayrollRuleController::class, 'settingsBulkUpdate']);
+    });
+
+    /* ========================= GOODS DEPOSITS (ใบมัดจำของใช้ทั่วไป) ========================= */
+    Route::middleware('permission:goods_deposits.view')->group(function () {
+        Route::get('/goods-deposits', [GoodsDepositController::class, 'index']);
+        Route::get('/goods-deposits/preview-for-payslip/{payslip}', [GoodsDepositController::class, 'previewForPayslip']);
+        Route::get('/goods-deposits/{deposit}', [GoodsDepositController::class, 'show']);
+    });
+    Route::middleware('permission:goods_deposits.create')->group(function () {
+        Route::post('/goods-deposits', [GoodsDepositController::class, 'store']);
+    });
+    Route::middleware('permission:goods_deposits.update')->group(function () {
+        Route::put('/goods-deposits/{deposit}', [GoodsDepositController::class, 'update']);
+        Route::post('/goods-deposits/{deposit}/status', [GoodsDepositController::class, 'changeStatus']);
+        Route::post('/goods-deposits/apply-to-payslip/{payslip}', [GoodsDepositController::class, 'applyToPayslip']);
+        Route::post('/goods-deposits/revoke-from-payslip/{payslip}', [GoodsDepositController::class, 'revokeFromPayslip']);
+    });
+    Route::middleware('permission:goods_deposits.delete')->group(function () {
+        Route::delete('/goods-deposits/{deposit}', [GoodsDepositController::class, 'destroy']);
     });
 
     /* ========================= REPORTS ========================= */
