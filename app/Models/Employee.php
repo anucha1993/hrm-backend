@@ -30,6 +30,7 @@ class Employee extends Model
         'email',
         'address',
         'national_id',
+        'labour_id',
         'marital_status',
         'religion',
         'education_level',
@@ -57,6 +58,7 @@ class Employee extends Model
         'hire_date'   => 'date',
         'resign_date' => 'date',
         'base_salary' => 'decimal:2',
+        'labour_id'   => 'integer',
     ];
 
     protected $appends = ['full_name', 'age'];

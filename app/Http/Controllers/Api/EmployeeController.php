@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Country;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
 use App\Models\Role;
@@ -33,6 +34,27 @@ class EmployeeController extends Controller
         if ($id = $request->integer('department_id'))      $q->where('department_id', $id);
         if ($id = $request->integer('employment_type_id')) $q->where('employment_type_id', $id);
         if ($status = $request->string('status')->toString()) $q->where('status', $status);
+
+        // กรองสัญชาติ: ต่างด้าว = มี labour_id หรือระบุประเทศที่ไม่ใช่ไทย, คนไทย = ตรงข้าม
+        $nationality = $request->string('nationality')->toString();
+        if ($nationality === 'foreign' || $nationality === 'thai') {
+            $thaiIds = Country::where('code', 'TH')->pluck('id')->all();
+
+            if ($nationality === 'foreign') {
+                $q->where(function ($w) use ($thaiIds) {
+                    $w->whereNotNull('labour_id')
+                      ->orWhere(function ($w2) use ($thaiIds) {
+                          $w2->whereNotNull('country_id');
+                          if ($thaiIds) $w2->whereNotIn('country_id', $thaiIds);
+                      });
+                });
+            } else {
+                $q->whereNull('labour_id')->where(function ($w) use ($thaiIds) {
+                    $w->whereNull('country_id');
+                    if ($thaiIds) $w->orWhereIn('country_id', $thaiIds);
+                });
+            }
+        }
 
         return response()->json(['data' => $q->paginate($request->integer('per_page', 20))]);
     }

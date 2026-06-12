@@ -123,18 +123,25 @@ class EmployeeImportController extends Controller
     private function buildPayload(array $row, array $countryMap, array $deptMap, array $empTypeMap): array
     {
         $countryId      = isset($row['country_code']) ? ($countryMap[$row['country_code']] ?? null) : null;
-        $departmentId   = isset($row['department_code']) ? ($deptMap[$row['department_code']] ?? null) : null;
+        $departmentId   = $this->resolveDepartmentId($row, $deptMap);
         $employmentType = isset($row['employment_type_code']) ? ($empTypeMap[$row['employment_type_code']] ?? null) : null;
+
+        // วันเกิด: แปลงค่า ถ้าได้วันที่อนาคต (ข้อมูลผิด) ให้เป็น null แทนการตกข้ามทั้งแถว
+        $birthDate = $this->parseDate($row['birth_date'] ?? null);
+        if ($birthDate !== null && $birthDate >= now()->format('Y-m-d')) {
+            $birthDate = null;
+        }
 
         return [
             'employee_code'              => $row['employee_code'] ?? null,
             'title'                      => $row['title'] ?? null,
             'first_name'                 => $row['first_name'] ?? null,
-            'last_name'                  => $row['last_name'] ?? null,
+            'last_name'                  => $row['last_name'] ?? '-',
             'nickname'                   => $row['nickname'] ?? null,
-            'birth_date'                 => $this->parseDate($row['birth_date'] ?? null),
+            'birth_date'                 => $birthDate,
             'gender'                     => $row['gender'] ?? null,
             'national_id'                => $row['national_id'] !== null ? (string) $row['national_id'] : null,
+            'labour_id'                  => isset($row['labour_id']) && $row['labour_id'] !== '' ? (int) $row['labour_id'] : null,
             'phone'                      => $row['phone'] !== null ? (string) $row['phone'] : null,
             'email'                      => $row['email'] ?? null,
             'address'                    => $row['address'] ?? null,
@@ -159,6 +166,39 @@ class EmployeeImportController extends Controller
         ];
     }
 
+    /**
+     * หา department_id จาก department_code ก่อน ถ้าไม่ระบุ/ไม่พบ ให้เดาจาก prefix ของรหัสพนักงาน
+     * (รหัสพนักงานตั้งตามรหัสแผนก เช่น PSY001 -> แผนก PSY, OFF001 -> แผนก OFF)
+     */
+    private function resolveDepartmentId(array $row, array $deptMap): ?int
+    {
+        $code = $row['department_code'] ?? null;
+        if ($code !== null && isset($deptMap[$code])) {
+            return $deptMap[$code];
+        }
+
+        $empCode = strtoupper(trim((string) ($row['employee_code'] ?? '')));
+        if ($empCode === '') {
+            return null;
+        }
+
+        // จับคู่รหัสแผนกที่ยาวที่สุดก่อน เพื่อเลี่ยงการ match บางส่วน
+        $deptCodes = array_keys($deptMap);
+        usort($deptCodes, fn ($a, $b) => strlen((string) $b) - strlen((string) $a));
+
+        foreach ($deptCodes as $dc) {
+            $dcUpper = strtoupper((string) $dc);
+            if ($dcUpper !== '' && str_starts_with($empCode, $dcUpper)) {
+                $rest = substr($empCode, strlen($dcUpper));
+                if ($rest === '' || ctype_digit($rest[0])) {
+                    return $deptMap[$dc];
+                }
+            }
+        }
+
+        return null;
+    }
+
     private function rules(): array
     {
         return [
@@ -166,9 +206,10 @@ class EmployeeImportController extends Controller
             'title'              => ['required', \Illuminate\Validation\Rule::in(['นาย', 'นางสาว', 'นาง'])],
             'first_name'         => ['required', 'string', 'max:255'],
             'last_name'          => ['required', 'string', 'max:255'],
-            'birth_date'         => ['required', 'date', 'before:today'],
+            'birth_date'         => ['nullable', 'date', 'before:today'],
             'gender'             => ['required', \Illuminate\Validation\Rule::in(['M', 'F', 'Other'])],
-            'national_id'        => ['required', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/', 'unique:employees,national_id'],
+            'national_id'        => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/', 'unique:employees,national_id'],
+            'labour_id'          => ['nullable', 'integer', 'min:1'],
             'email'              => ['nullable', 'email', 'unique:employees,email'],
             'country_id'         => ['nullable', 'exists:countries,id'],
             'department_id'      => ['nullable', 'exists:departments,id'],
@@ -181,26 +222,39 @@ class EmployeeImportController extends Controller
     }
 
     /**
-     * แปลงค่า cell เป็นวันที่ (รองรับทั้ง string และ Excel serial number)
+     * แปลงค่า cell เป็นวันที่ (รองรับ string, Excel serial number และปีพุทธศักราช)
      */
     private function parseDate($value): ?string
     {
         if ($value === null || $value === '') return null;
 
+        $carbon = null;
+
         if (is_numeric($value)) {
             try {
-                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $value)
-                    ->format('Y-m-d');
+                $carbon = Carbon::instance(
+                    \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $value)
+                );
             } catch (\Throwable $e) {
-                // ตกไปลอง parse แบบ string
+                $carbon = null;
             }
         }
 
-        try {
-            return Carbon::parse($value)->format('Y-m-d');
-        } catch (\Throwable $e) {
-            return null;
+        if ($carbon === null) {
+            try {
+                $carbon = Carbon::parse($value);
+            } catch (\Throwable $e) {
+                return null;
+            }
         }
+
+        // แปลงปีพุทธศักราช (พ.ศ.) เป็นคริสต์ศักราช (ค.ศ.) อัตโนมัติ
+        // ปี พ.ศ. จะมากกว่า 2400 เสมอ ส่วนปี ค.ศ. ของวันเกิด/วันเริ่มงานจะน้อยกว่ามาก
+        if ($carbon->year >= 2400) {
+            $carbon = $carbon->copy()->subYears(543);
+        }
+
+        return $carbon->format('Y-m-d');
     }
 
     /**

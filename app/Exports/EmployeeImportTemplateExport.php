@@ -35,7 +35,7 @@ class EmployeeImportTemplateSheet implements
     {
         return [
             'employee_code', 'title', 'first_name', 'last_name', 'nickname',
-            'birth_date', 'gender', 'national_id',
+            'birth_date', 'gender', 'national_id', 'labour_id',
             'phone', 'email', 'address',
             'marital_status', 'religion', 'education_level',
             'country_code', 'department_code', 'employment_type_code',
@@ -52,7 +52,7 @@ class EmployeeImportTemplateSheet implements
         return [
             [
                 'EMP100', 'นาย', 'สมชาย', 'ใจดี', 'ชาย',
-                '1990-05-15', 'M', '1234567890123',
+                '1990-05-15', 'M', '1234567890123', '',
                 '0812345678', 'somchai@example.com', '123 หมู่ 1 ต.ในเมือง อ.เมือง',
                 'โสด', 'พุทธ', 'ปริญญาตรี',
                 'TH', 'POUR', 'MONTHLY',
@@ -104,6 +104,10 @@ class EmployeeImportHelperSheet implements
     public function array(): array
     {
         $rows = [];
+
+        // labour_id
+        $rows[] = ['labour_id', '(ตัวเลข)', 'รหัส Labour ID จากระบบแรงงานต่างด้าว (ใส่เฉพาะคนต่างด้าว / คนไทยเว้นว่าง)'];
+        $rows[] = ['', '', ''];
 
         // Title
         foreach (['นาย', 'นางสาว', 'นาง'] as $t) {

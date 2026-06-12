@@ -14,12 +14,21 @@ class MasterDataSeeder extends Seeder
         $departments = [
             ['code' => 'HR',    'name' => 'ฝ่ายบุคคล'],
             ['code' => 'ACC',   'name' => 'ฝ่ายบัญชีและการเงิน'],
-            ['code' => 'PROD',  'name' => 'ฝ่ายผลิตคอนกรีต'],
-            ['code' => 'POUR',  'name' => 'ฝ่ายเทคอนกรีต'],
-            ['code' => 'LIFT',  'name' => 'ฝ่ายยก/เครน'],
-            ['code' => 'TRANS', 'name' => 'ฝ่ายขนส่ง'],
-            ['code' => 'CLEAN', 'name' => 'ฝ่ายทำความสะอาด'],
-            ['code' => 'QC',    'name' => 'ฝ่ายควบคุมคุณภาพ'],
+            ['code' => 'SALE',  'name' => 'ฝ่ายขาย'],
+            ['code' => 'OFF',   'name' => 'ออฟฟิศ (เสมียน)'],
+            ['code' => 'DRV',   'name' => 'คนขับรถ'],
+            ['code' => 'HLP',   'name' => 'เด็กรถ'],
+            ['code' => 'PYF',   'name' => 'แผ่นพื้นยก แพหน้า'],
+            ['code' => 'PYB',   'name' => 'แผ่นพื้นยก แพหลัง'],
+            ['code' => 'PTF',   'name' => 'แผ่นพื้นเท แพหน้า'],
+            ['code' => 'PTB',   'name' => 'แผ่นพื้นเท แพหลัง'],
+            ['code' => 'PSY',   'name' => 'อัดแรง-ยก'],
+            ['code' => 'PST',   'name' => 'อัดแรง-เท'],
+            ['code' => 'SIY',   'name' => 'เสาไอ-ยก'],
+            ['code' => 'SIT',   'name' => 'เสาไอ-เท'],
+            ['code' => 'PIL',   'name' => 'เสาเข็ม ธรรมดา'],
+            ['code' => 'R33',   'name' => 'เสารั้ว 3x3'],
+            ['code' => 'R44',   'name' => 'เสารั้ว 4x4'],
         ];
         foreach ($departments as $d) {
             Department::updateOrCreate(['code' => $d['code']], $d + ['is_active' => true]);
