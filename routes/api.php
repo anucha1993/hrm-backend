@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\AttendanceImportController;
 use App\Http\Controllers\Api\Attendance\AttendanceSummaryController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Leave\LeaveRequestController;
@@ -104,6 +105,13 @@ Route::middleware('auth:sanctum')->group(function () {
     // Attendance: ดูรวม / จัดการ
     Route::middleware('permission:attendance.view')->get('/attendance', [AttendanceController::class, 'index']);
     Route::middleware('permission:attendance.view')->get('/attendance/export', [AttendanceController::class, 'export']);
+
+    // Attendance: นำเข้าเวลาทำงานจาก Excel (HR/Admin)
+    // ต้องอยู่ก่อน route ที่มี /attendance/{attendance} เพื่อกัน route conflict
+    Route::middleware('permission:attendance.manage')->group(function () {
+        Route::get('/attendance/import/template', [AttendanceImportController::class, 'template']);
+        Route::post('/attendance/import', [AttendanceImportController::class, 'import']);
+    });
 
     // Attendance master data (สถานที่ + กะ)
     Route::middleware('permission:attendance.view')->group(function () {

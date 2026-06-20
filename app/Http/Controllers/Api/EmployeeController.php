@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Country;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
+use App\Models\EmploymentType;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -108,7 +109,7 @@ class EmployeeController extends Controller
 
     private function validateData(Request $request, ?int $id = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'employee_code'   => ['required', 'string', 'max:50', Rule::unique('employees', 'employee_code')->ignore($id)],
             'title'           => ['required', Rule::in(['นาย', 'นางสาว', 'นาง'])],
             'first_name'      => ['required', 'string', 'max:255'],
@@ -152,6 +153,14 @@ class EmployeeController extends Controller
             'delete_document_ids'   => ['nullable', 'array'],
             'delete_document_ids.*' => ['integer'],
         ]);
+
+        // จ้างตามชิ้นงาน (งานเหมา) จ่ายตามเรทค่าจ้างการผลิต → ไม่มีเงินเดือน/ค่าจ้างประจำ
+        if (! empty($data['employment_type_id'])
+            && EmploymentType::whereKey($data['employment_type_id'])->where('code', 'PIECEWORK')->exists()) {
+            $data['base_salary'] = null;
+        }
+
+        return $data;
     }
 
     /**

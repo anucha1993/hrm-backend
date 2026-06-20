@@ -48,6 +48,7 @@ class MasterDataSeeder extends Seeder
             ['code' => 'MONTHLY',  'name' => 'รายเดือน'],
             ['code' => 'DAILY',    'name' => 'รายวัน'],
             ['code' => 'HOURLY',   'name' => 'รายชั่วโมง'],
+            ['code' => 'PIECEWORK', 'name' => 'จ้างตามชิ้นงาน'],
             ['code' => 'CONTRACT', 'name' => 'สัญญาจ้าง'],
             ['code' => 'INTERN',   'name' => 'ฝึกงาน'],
         ];

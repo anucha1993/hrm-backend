@@ -20,6 +20,9 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AttendanceController extends Controller
 {
+    /** timezone ของธุรกิจ — checked_at เก็บใน DB เป็น UTC แต่คำนวณสาย/OT บนเวลาท้องถิ่น */
+    private const TZ = 'Asia/Bangkok';
+
     /** ลงเวลา (เข้า/ออก) */
     public function checkIn(Request $request): JsonResponse
     {
@@ -72,21 +75,22 @@ class AttendanceController extends Controller
             }
         }
 
-        // หากะที่ active ของพนักงาน → คำนวณสาย
+        // หากะที่ active ของพนักงาน → คำนวณสาย (เทียบบนเวลาท้องถิ่น)
         $shift = $this->resolveShift($employee, $now);
         $status = 'normal';
         $lateMinutes = null;
+        $local = $now->copy()->setTimezone(self::TZ);
         if ($shift && $data['type'] === 'check_in') {
-            $shiftStart = Carbon::parse($now->format('Y-m-d') . ' ' . $shift->start_time);
-            $diff = $now->diffInMinutes($shiftStart, false); // negative = late
+            $shiftStart = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->start_time, self::TZ);
+            $diff = $local->diffInMinutes($shiftStart, false); // negative = late
             if ($diff < -intval($shift->late_grace_minutes ?? 0)) {
                 $status = 'late';
                 $lateMinutes = abs($diff);
             }
         } elseif ($shift && $data['type'] === 'check_out') {
-            $shiftEnd = Carbon::parse($now->format('Y-m-d') . ' ' . $shift->end_time);
-            if ($now->lt($shiftEnd)) $status = 'early_leave';
-            elseif ($now->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
+            $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
+            if ($local->lt($shiftEnd)) $status = 'early_leave';
+            elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
         }
 
         // เก็บรูป
@@ -223,17 +227,18 @@ class AttendanceController extends Controller
         $lateMinutes = $data['late_minutes'] ?? null;
 
         if (! isset($data['status']) && $shift) {
+            $local = $checkedAt->copy()->setTimezone(self::TZ);
             if ($data['type'] === 'check_in') {
-                $shiftStart = Carbon::parse($checkedAt->format('Y-m-d') . ' ' . $shift->start_time);
-                $diff = $checkedAt->diffInMinutes($shiftStart, false);
+                $shiftStart = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->start_time, self::TZ);
+                $diff = $local->diffInMinutes($shiftStart, false);
                 if ($diff < -intval($shift->late_grace_minutes ?? 0)) {
                     $status = 'late';
                     $lateMinutes = abs($diff);
                 }
             } elseif ($data['type'] === 'check_out') {
-                $shiftEnd = Carbon::parse($checkedAt->format('Y-m-d') . ' ' . $shift->end_time);
-                if ($checkedAt->lt($shiftEnd)) $status = 'early_leave';
-                elseif ($checkedAt->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
+                $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
+                if ($local->lt($shiftEnd)) $status = 'early_leave';
+                elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
             }
         }
 
