@@ -170,10 +170,11 @@ class AttendanceController extends Controller
     /** ดูประวัติทั้งหมด (สำหรับ admin) */
     public function index(Request $request): JsonResponse
     {
-        $q = Attendance::with(['employee:id,employee_code,first_name,last_name', 'officeLocation'])
+        $q = Attendance::with(['employee:id,employee_code,first_name,last_name,department_id', 'employee.department:id,code,name', 'officeLocation'])
             ->orderBy('checked_at', 'desc');
 
         if ($id = $request->integer('employee_id')) $q->where('employee_id', $id);
+        if ($deptId = $request->integer('department_id')) $q->whereHas('employee', fn ($w) => $w->where('department_id', $deptId));
         if ($type = $request->string('type')->toString()) $q->where('type', $type);
         if ($from = $request->date('from')) $q->where('checked_at', '>=', $from);
         if ($to   = $request->date('to'))   $q->where('checked_at', '<=', $to->endOfDay());
@@ -186,9 +187,10 @@ class AttendanceController extends Controller
      */
     public function export(Request $request): BinaryFileResponse
     {
-        $q = Attendance::with(['employee:id,employee_code,first_name,last_name', 'officeLocation'])
+        $q = Attendance::with(['employee:id,employee_code,first_name,last_name,department_id', 'employee.department:id,code,name', 'officeLocation'])
             ->orderBy('checked_at', 'desc');
         if ($id = $request->integer('employee_id')) $q->where('employee_id', $id);
+        if ($deptId = $request->integer('department_id')) $q->whereHas('employee', fn ($w) => $w->where('department_id', $deptId));
         if ($type = $request->string('type')->toString()) $q->where('type', $type);
         if ($from = $request->date('from')) $q->where('checked_at', '>=', $from);
         if ($to   = $request->date('to'))   $q->where('checked_at', '<=', $to->endOfDay());
