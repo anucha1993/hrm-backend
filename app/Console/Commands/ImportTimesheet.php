@@ -5,9 +5,8 @@ namespace App\Console\Commands;
 use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
 use App\Models\Employee;
-use App\Models\EmployeeShift;
 use App\Models\EmploymentType;
-use App\Models\WorkShift;
+use App\Services\WorkScheduleService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +24,9 @@ class ImportTimesheet extends Command
 
     /** timezone ของธุรกิจ (เวลาในไฟล์เป็นเวลาประเทศไทย) — เก็บลง DB เป็น UTC */
     private const TZ = 'Asia/Bangkok';
+
+    /** ตัวช่วย resolve กะ/วันหยุด (cache ภายในรอบการรันเดียว) */
+    private WorkScheduleService $schedule;
 
     /** ชื่อหัวคอลัมน์ที่คาดหวัง → key ภายใน */
     private const HEADER_MAP = [
@@ -49,6 +51,8 @@ class ImportTimesheet extends Command
         $updateTypes = (bool) $this->option('update-types');
         $sheetIdx = (int) $this->option('sheet');
 
+        $this->schedule = new WorkScheduleService();
+
         $sheets = Excel::toArray(null, new \Illuminate\Http\UploadedFile($path, basename($path), null, null, true));
         $rows = $sheets[$sheetIdx] ?? null;
         if (! $rows || count($rows) < 2) {
@@ -67,7 +71,7 @@ class ImportTimesheet extends Command
         $data = array_slice($rows, 1);
 
         // === เตรียม lookup ===
-        $employees = Employee::select('id', 'employee_code', 'employment_type_id')
+        $employees = Employee::select('id', 'employee_code', 'employment_type_id', 'department_id', 'work_profile_id')
             ->get()
             ->keyBy(fn ($e) => mb_strtoupper(trim((string) $e->employee_code)));
 
@@ -148,11 +152,11 @@ class ImportTimesheet extends Command
                 }
 
                 if ($in !== null) {
-                    $res = $this->createRecord($emp->id, 'check_in', Carbon::parse("$dateStr $in", self::TZ), $dry);
+                    $res = $this->createRecord($emp, 'check_in', Carbon::parse("$dateStr $in", self::TZ), $dry);
                     $res ? $created++ : $skippedDup++;
                 }
                 if ($out !== null) {
-                    $res = $this->createRecord($emp->id, 'check_out', Carbon::parse("$dateStr $out", self::TZ), $dry);
+                    $res = $this->createRecord($emp, 'check_out', Carbon::parse("$dateStr $out", self::TZ), $dry);
                     $res ? $created++ : $skippedDup++;
                 }
             }
@@ -244,23 +248,23 @@ class ImportTimesheet extends Command
      * สร้าง Attendance 1 record + คำนวณสาย/ออกก่อน/OT + audit log
      * คืน false ถ้าซ้ำ (กันซ้ำ ±1 นาที พนักงาน+ประเภทเดียวกัน)
      */
-    private function createRecord(int $employeeId, string $type, Carbon $checkedAt, bool $dry): bool
+    private function createRecord(Employee $employee, string $type, Carbon $checkedAt, bool $dry): bool
     {
         // $checkedAt เป็นเวลาท้องถิ่น (Asia/Bangkok) — เก็บลง DB เป็น UTC แต่คำนวณสถานะบนเวลาท้องถิ่น
         $utc = $checkedAt->copy()->utc();
         $tz = $checkedAt->getTimezone();
 
-        $exists = Attendance::where('employee_id', $employeeId)
+        $exists = Attendance::where('employee_id', $employee->id)
             ->where('type', $type)
             ->whereBetween('checked_at', [$utc->copy()->subMinute(), $utc->copy()->addMinute()])
             ->exists();
         if ($exists) return false;
 
-        $shift = $this->resolveShift($employeeId, $checkedAt);
+        $shift = $this->schedule->resolveShift($employee, $checkedAt);
         $status = 'normal';
         $lateMinutes = null;
 
-        if ($shift) {
+        if ($shift && ! $this->schedule->isHoliday($employee, $checkedAt)) {
             if ($type === 'check_in') {
                 $shiftStart = Carbon::parse($checkedAt->format('Y-m-d') . ' ' . $shift->start_time, $tz);
                 $diff = $checkedAt->diffInMinutes($shiftStart, false);
@@ -281,7 +285,7 @@ class ImportTimesheet extends Command
         if ($dry) return true;
 
         $attendance = Attendance::create([
-            'employee_id' => $employeeId,
+            'employee_id' => $employee->id,
             'type' => $type,
             'checked_at' => $utc,
             'work_shift_id' => $shift?->id,
@@ -297,7 +301,7 @@ class ImportTimesheet extends Command
 
         AttendanceAuditLog::create([
             'attendance_id' => $attendance->id,
-            'employee_id' => $employeeId,
+            'employee_id' => $employee->id,
             'action' => 'create',
             'old_values' => null,
             'new_values' => $attendance->only(['type', 'checked_at', 'status', 'late_minutes', 'work_shift_id']),
@@ -306,26 +310,5 @@ class ImportTimesheet extends Command
         ]);
 
         return true;
-    }
-
-    private function resolveShift(int $employeeId, Carbon $when): ?WorkShift
-    {
-        $assignment = EmployeeShift::with('workShift')
-            ->where('employee_id', $employeeId)
-            ->where('effective_from', '<=', $when->toDateString())
-            ->where(function ($q) use ($when) {
-                $q->whereNull('effective_to')->orWhere('effective_to', '>=', $when->toDateString());
-            })
-            ->orderBy('effective_from', 'desc')
-            ->first();
-
-        if (! $assignment || ! $assignment->workShift) return null;
-
-        $days = $assignment->work_days;
-        if (is_array($days) && count($days) > 0) {
-            if (! in_array($when->dayOfWeekIso, array_map('intval', $days), true)) return null;
-        }
-
-        return $assignment->workShift;
     }
 }

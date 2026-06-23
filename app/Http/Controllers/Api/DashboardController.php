@@ -19,6 +19,9 @@ use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
+    /** timezone ของธุรกิจ — checked_at เก็บใน DB เป็น UTC แต่ "วัน" อิงเวลาไทย */
+    private const TZ = 'Asia/Bangkok';
+
     /**
      * Role-aware dashboard summary.
      * Returns:
@@ -47,7 +50,7 @@ class DashboardController extends Controller
         ];
 
         if ($isAdmin) {
-            $data['today']   = $this->buildToday();
+            $data['today']   = $this->buildToday($request);
             $data['pending'] = $this->buildPending();
             $data['trends'] = [
                 'attendance_30d' => $this->attendanceTrend30d(),
@@ -64,15 +67,19 @@ class DashboardController extends Controller
     {
         $today = Carbon::today();
 
+        // หน้าต่าง "วันนี้" ตามเวลาไทย — checked_at เก็บเป็น UTC จึงแปลงขอบเขตเป็น UTC
+        $dayStart = Carbon::today(self::TZ)->startOfDay()->utc();
+        $dayEnd   = Carbon::today(self::TZ)->endOfDay()->utc();
+
         // Today's check-in
         $todayCheckin = Attendance::where('employee_id', $emp->id)
-            ->whereBetween('checked_at', [$today->copy()->startOfDay(), $today->copy()->endOfDay()])
+            ->whereBetween('checked_at', [$dayStart, $dayEnd])
             ->where('type', 'check_in')
             ->orderBy('checked_at')
             ->first();
 
         $todayCheckout = Attendance::where('employee_id', $emp->id)
-            ->whereBetween('checked_at', [$today->copy()->startOfDay(), $today->copy()->endOfDay()])
+            ->whereBetween('checked_at', [$dayStart, $dayEnd])
             ->where('type', 'check_out')
             ->orderByDesc('checked_at')
             ->first();
@@ -162,10 +169,24 @@ class DashboardController extends Controller
 
     /* ---------------- TODAY (company-wide) ---------------- */
 
-    protected function buildToday(): array
+    protected function buildToday(Request $request): array
     {
-        $start = Carbon::today()->startOfDay();
-        $end = Carbon::today()->endOfDay();
+        // ช่วงวันที่ (เวลาไทย) — ดีฟอลต์ = วันนี้; ส่ง from/to (Y-m-d) มาเพื่อเลือกช่วงได้
+        $fromInput = $request->query('from');
+        $toInput   = $request->query('to');
+        $fromLocal = $fromInput
+            ? Carbon::parse((string) $fromInput, self::TZ)->startOfDay()
+            : Carbon::today(self::TZ)->startOfDay();
+        $toLocal = $toInput
+            ? Carbon::parse((string) $toInput, self::TZ)->endOfDay()
+            : Carbon::today(self::TZ)->endOfDay();
+        if ($toLocal->lt($fromLocal)) {
+            [$fromLocal, $toLocal] = [$toLocal->copy()->startOfDay(), $fromLocal->copy()->endOfDay()];
+        }
+
+        // แปลงขอบเขตเป็น UTC สำหรับ query checked_at (เก็บเป็น UTC)
+        $start = $fromLocal->copy()->utc();
+        $end   = $toLocal->copy()->utc();
 
         $activeEmployees = Employee::where('status', Employee::STATUS_ACTIVE)
             ->pluck('id');
@@ -181,15 +202,17 @@ class DashboardController extends Controller
             ->filter(fn ($r) => $r->status === 'late' || ($r->late_minutes ?? 0) > 0)
             ->pluck('employee_id')->unique();
 
-        // On leave today
+        // ลาในช่วงวันที่ (เทียบด้วยวันปฏิทินไทย)
         $onLeaveIds = LeaveRequest::where('status', LeaveRequest::STATUS_APPROVED)
-            ->whereDate('start_date', '<=', $start)
-            ->whereDate('end_date', '>=', $end)
+            ->whereDate('start_date', '<=', $toLocal->toDateString())
+            ->whereDate('end_date', '>=', $fromLocal->toDateString())
             ->pluck('employee_id')->unique();
 
         $absent = max(0, $activeTotal - $presentIds->count() - $onLeaveIds->count());
 
         return [
+            'from'      => $fromLocal->toDateString(),
+            'to'        => $toLocal->toDateString(),
             'employees_active' => $activeTotal,
             'present'   => $presentIds->count(),
             'late'      => $lateIds->count(),
@@ -219,17 +242,20 @@ class DashboardController extends Controller
 
     protected function attendanceTrend30d(): array
     {
-        $from = Carbon::today()->subDays(29)->startOfDay();
-        $to = Carbon::today()->endOfDay();
+        // อิงปฏิทินเวลาไทย: ช่วงวันและการจัดกลุ่มต้องใช้ Asia/Bangkok (checked_at เก็บเป็น UTC)
+        $fromLocal = Carbon::today(self::TZ)->subDays(29)->startOfDay();
+        $toLocal   = Carbon::today(self::TZ)->endOfDay();
+        $from = $fromLocal->copy()->utc();
+        $to   = $toLocal->copy()->utc();
 
         $rows = Attendance::where('type', 'check_in')
             ->whereBetween('checked_at', [$from, $to])
             ->get();
 
-        $byDay = $rows->groupBy(fn ($r) => $r->checked_at->toDateString());
+        $byDay = $rows->groupBy(fn ($r) => $r->checked_at->copy()->setTimezone(self::TZ)->toDateString());
 
         $out = [];
-        foreach (CarbonPeriod::create($from, $to) as $day) {
+        foreach (CarbonPeriod::create($fromLocal, $toLocal) as $day) {
             $key = $day->toDateString();
             $g = $byDay->get($key, collect());
             $presentIds = $g->pluck('employee_id')->unique();

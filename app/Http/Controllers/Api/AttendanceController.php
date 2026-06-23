@@ -7,9 +7,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
 use App\Models\Employee;
-use App\Models\EmployeeShift;
 use App\Models\OfficeLocation;
 use App\Models\WorkShift;
+use App\Services\WorkScheduleService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +22,10 @@ class AttendanceController extends Controller
 {
     /** timezone ของธุรกิจ — checked_at เก็บใน DB เป็น UTC แต่คำนวณสาย/OT บนเวลาท้องถิ่น */
     private const TZ = 'Asia/Bangkok';
+
+    public function __construct(private readonly WorkScheduleService $schedule)
+    {
+    }
 
     /** ลงเวลา (เข้า/ออก) */
     public function checkIn(Request $request): JsonResponse
@@ -80,14 +84,15 @@ class AttendanceController extends Controller
         $status = 'normal';
         $lateMinutes = null;
         $local = $now->copy()->setTimezone(self::TZ);
-        if ($shift && $data['type'] === 'check_in') {
+        $isHoliday = $this->schedule->isHoliday($employee, $local);
+        if (! $isHoliday && $shift && $data['type'] === 'check_in') {
             $shiftStart = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->start_time, self::TZ);
             $diff = $local->diffInMinutes($shiftStart, false); // negative = late
             if ($diff < -intval($shift->late_grace_minutes ?? 0)) {
                 $status = 'late';
                 $lateMinutes = abs($diff);
             }
-        } elseif ($shift && $data['type'] === 'check_out') {
+        } elseif (! $isHoliday && $shift && $data['type'] === 'check_out') {
             $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
             if ($local->lt($shiftEnd)) $status = 'early_leave';
             elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
@@ -230,17 +235,19 @@ class AttendanceController extends Controller
 
         if (! isset($data['status']) && $shift) {
             $local = $checkedAt->copy()->setTimezone(self::TZ);
-            if ($data['type'] === 'check_in') {
-                $shiftStart = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->start_time, self::TZ);
-                $diff = $local->diffInMinutes($shiftStart, false);
-                if ($diff < -intval($shift->late_grace_minutes ?? 0)) {
-                    $status = 'late';
-                    $lateMinutes = abs($diff);
+            if (! $this->schedule->isHoliday($employee, $local)) {
+                if ($data['type'] === 'check_in') {
+                    $shiftStart = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->start_time, self::TZ);
+                    $diff = $local->diffInMinutes($shiftStart, false);
+                    if ($diff < -intval($shift->late_grace_minutes ?? 0)) {
+                        $status = 'late';
+                        $lateMinutes = abs($diff);
+                    }
+                } elseif ($data['type'] === 'check_out') {
+                    $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
+                    if ($local->lt($shiftEnd)) $status = 'early_leave';
+                    elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
                 }
-            } elseif ($data['type'] === 'check_out') {
-                $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
-                if ($local->lt($shiftEnd)) $status = 'early_leave';
-                elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
             }
         }
 
@@ -379,25 +386,7 @@ class AttendanceController extends Controller
 
     private function resolveShift(Employee $employee, Carbon $when): ?WorkShift
     {
-        $assignment = EmployeeShift::with('workShift')
-            ->where('employee_id', $employee->id)
-            ->where('effective_from', '<=', $when->toDateString())
-            ->where(function ($q) use ($when) {
-                $q->whereNull('effective_to')->orWhere('effective_to', '>=', $when->toDateString());
-            })
-            ->orderBy('effective_from', 'desc')
-            ->first();
-
-        if (! $assignment || ! $assignment->workShift) return null;
-
-        // ตรวจ work_days (1=Mon ... 7=Sun)
-        $days = $assignment->work_days;
-        if (is_array($days) && count($days) > 0) {
-            $dow = $when->dayOfWeekIso; // 1..7
-            if (! in_array($dow, array_map('intval', $days), true)) return null;
-        }
-
-        return $assignment->workShift;
+        return $this->schedule->resolveShift($employee, $when);
     }
 
     private function buildMessage(string $type, string $status, bool $outside): string

@@ -28,6 +28,8 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WorkProfileController;
+use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\WorkShiftController;
 use Illuminate\Support\Facades\Route;
 
@@ -117,6 +119,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:attendance.view')->group(function () {
         Route::get('/office-locations', [OfficeLocationController::class, 'index']);
         Route::get('/work-shifts', [WorkShiftController::class, 'index']);
+        Route::get('/work-profiles', [WorkProfileController::class, 'index']);
+        Route::get('/work-profiles/{workProfile}', [WorkProfileController::class, 'show']);
+        Route::get('/holidays', [HolidayController::class, 'index']);
     });
     Route::middleware('permission:attendance.manage')->group(function () {
         Route::post('/office-locations', [OfficeLocationController::class, 'store']);
@@ -126,6 +131,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/work-shifts', [WorkShiftController::class, 'store']);
         Route::put('/work-shifts/{workShift}', [WorkShiftController::class, 'update']);
         Route::delete('/work-shifts/{workShift}', [WorkShiftController::class, 'destroy']);
+
+        Route::post('/work-profiles', [WorkProfileController::class, 'store']);
+        Route::put('/work-profiles/{workProfile}', [WorkProfileController::class, 'update']);
+        Route::delete('/work-profiles/{workProfile}', [WorkProfileController::class, 'destroy']);
+        Route::put('/work-profiles/{workProfile}/departments', [WorkProfileController::class, 'syncDepartments']);
+
+        Route::post('/holidays', [HolidayController::class, 'store']);
+        Route::put('/holidays/{holiday}', [HolidayController::class, 'update']);
+        Route::delete('/holidays/{holiday}', [HolidayController::class, 'destroy']);
 
         // แก้ไข/เพิ่ม/ลบ Attendance ย้อนหลัง (HR/Admin)
         Route::post('/attendance/manual', [AttendanceController::class, 'storeManual']);

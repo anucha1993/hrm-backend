@@ -36,6 +36,7 @@ class Employee extends Model
         'education_level',
         'country_id',
         'department_id',
+        'work_profile_id',
         'employment_type_id',
         'position',
         'hire_date',
@@ -77,6 +78,11 @@ class Employee extends Model
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function workProfile(): BelongsTo
+    {
+        return $this->belongsTo(WorkProfile::class);
     }
 
     public function country(): BelongsTo

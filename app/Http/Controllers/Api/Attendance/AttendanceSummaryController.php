@@ -50,6 +50,7 @@ class AttendanceSummaryController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'department_id' => ['nullable', 'integer'],
+            'employment_type_id' => ['nullable', 'integer'],
             'employee_id' => ['nullable', 'integer'],
         ]);
 
@@ -68,6 +69,7 @@ class AttendanceSummaryController extends Controller
         $emp = Employee::query()
             ->where('status', 'active')
             ->when($data['department_id'] ?? null, fn ($q, $v) => $q->where('department_id', $v))
+            ->when($data['employment_type_id'] ?? null, fn ($q, $v) => $q->where('employment_type_id', $v))
             ->when($data['employee_id'] ?? null, fn ($q, $v) => $q->where('id', $v));
 
         // ถ้าไม่มีสิทธิ์ดูสรุปทั้งหมด — เห็นเฉพาะตน

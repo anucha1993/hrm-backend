@@ -129,6 +129,7 @@ class EmployeeController extends Controller
 
             'country_id'         => ['nullable', 'exists:countries,id'],
             'department_id'      => ['nullable', 'exists:departments,id'],
+            'work_profile_id'    => ['nullable', 'exists:work_profiles,id'],
             'employment_type_id' => ['nullable', 'exists:employment_types,id'],
 
             'position'    => ['nullable', 'string', 'max:255'],

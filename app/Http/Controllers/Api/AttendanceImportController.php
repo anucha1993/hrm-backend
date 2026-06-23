@@ -7,9 +7,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
 use App\Models\Employee;
-use App\Models\EmployeeShift;
 use App\Models\EmploymentType;
 use App\Models\WorkShift;
+use App\Services\WorkScheduleService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +21,10 @@ class AttendanceImportController extends Controller
 {
     /** timezone ของธุรกิจ (เวลาในไฟล์เป็นเวลาประเทศไทย) — เก็บลง DB เป็น UTC */
     private const TZ = 'Asia/Bangkok';
+
+    public function __construct(private readonly WorkScheduleService $schedule)
+    {
+    }
 
     /**
      * ดาวน์โหลดไฟล์ template สำหรับนำเข้าเวลาทำงาน
@@ -188,11 +192,11 @@ class AttendanceImportController extends Controller
             return false;
         }
 
-        $shift = $this->resolveShift($employee, $checkedAt);
+        $shift = $this->schedule->resolveShift($employee, $checkedAt);
         $status = 'normal';
         $lateMinutes = null;
 
-        if ($shift) {
+        if ($shift && ! $this->schedule->isHoliday($employee, $checkedAt)) {
             if ($type === 'check_in') {
                 $shiftStart = Carbon::parse($checkedAt->format('Y-m-d') . ' ' . $shift->start_time, $tz);
                 $diff = $checkedAt->diffInMinutes($shiftStart, false);
@@ -236,36 +240,6 @@ class AttendanceImportController extends Controller
         ]);
 
         return true;
-    }
-
-    /**
-     * หากะของพนักงาน ณ วันที่กำหนด (logic เดียวกับ AttendanceController::resolveShift)
-     */
-    private function resolveShift(Employee $employee, Carbon $when): ?WorkShift
-    {
-        $assignment = EmployeeShift::with('workShift')
-            ->where('employee_id', $employee->id)
-            ->where('effective_from', '<=', $when->toDateString())
-            ->where(function ($q) use ($when) {
-                $q->whereNull('effective_to')->orWhere('effective_to', '>=', $when->toDateString());
-            })
-            ->orderBy('effective_from', 'desc')
-            ->first();
-
-        if (! $assignment || ! $assignment->workShift) {
-            return null;
-        }
-
-        // ตรวจ work_days (1=Mon ... 7=Sun)
-        $days = $assignment->work_days;
-        if (is_array($days) && count($days) > 0) {
-            $dow = $when->dayOfWeekIso; // 1..7
-            if (! in_array($dow, array_map('intval', $days), true)) {
-                return null;
-            }
-        }
-
-        return $assignment->workShift;
     }
 
     /**
