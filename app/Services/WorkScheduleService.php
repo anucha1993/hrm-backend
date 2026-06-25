@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Employee;
+use App\Models\EmployeeRotation;
 use App\Models\EmployeeShift;
 use App\Models\Holiday;
+use App\Models\ShiftDayOverride;
 use App\Models\WorkProfile;
 use App\Models\WorkShift;
 use Carbon\Carbon;
@@ -70,17 +72,51 @@ class WorkScheduleService
 
     /**
      * หากะของพนักงาน ณ วันที่กำหนด
-     *  1) EmployeeShift รายคน (มีช่วงวันที่ + work_days) — ความสำคัญสูงสุด
-     *  2) กะของโปรไฟล์ (ตรวจ work_days ของโปรไฟล์)
-     *  3) null = ไม่มีกะ (ลงเวลาได้ตลอดวัน)
+     *  1) Override รายวัน (สลับกะ / ปรับมือ) — ความสำคัญสูงสุด
+     *  2) ตารางหมุนเวียนกะ (rotation)
+     *  3) EmployeeShift รายคน (มีช่วงวันที่ + work_days)
+     *  4) กะของโปรไฟล์ (ตรวจ work_days ของโปรไฟล์)
+     *  5) null = ไม่มีกะ (ลงเวลาได้ตลอดวัน)
      */
     public function resolveShift(Employee $employee, Carbon $when): ?WorkShift
     {
+        $dateStr = $when->toDateString();
+
+        // 1) Override รายวัน (สลับกะ/ปรับมือ) — ชนะทุกอย่าง
+        $override = ShiftDayOverride::with('workShift')
+            ->where('employee_id', $employee->id)
+            ->whereDate('date', $dateStr)
+            ->first();
+        if ($override) {
+            if ($override->is_day_off) {
+                return null;             // กำหนดให้วันนี้หยุดชัดเจน
+            }
+            if ($override->workShift) {
+                return $override->workShift;
+            }
+            // override ที่ไม่มีกะและไม่ใช่วันหยุด → ตกไปชั้นถัดไป
+        }
+
+        // 2) ตารางหมุนเวียนกะ (rotation) — ถ้ามี ให้รอบเป็นผู้ตัดสิน (กะ หรือ วันหยุดของรอบ)
+        $rotationAssignment = EmployeeRotation::with('rotation')
+            ->where('employee_id', $employee->id)
+            ->where('effective_from', '<=', $dateStr)
+            ->where(function ($q) use ($dateStr) {
+                $q->whereNull('effective_to')->orWhere('effective_to', '>=', $dateStr);
+            })
+            ->orderBy('effective_from', 'desc')
+            ->first();
+        if ($rotationAssignment && $rotationAssignment->rotation && $rotationAssignment->rotation->is_active) {
+            $shiftId = $this->rotationShiftId($rotationAssignment, $when);
+            return $shiftId ? WorkShift::find($shiftId) : null; // null = วันหยุดในรอบ
+        }
+
+        // 3) EmployeeShift รายคน
         $assignment = EmployeeShift::with('workShift')
             ->where('employee_id', $employee->id)
-            ->where('effective_from', '<=', $when->toDateString())
-            ->where(function ($q) use ($when) {
-                $q->whereNull('effective_to')->orWhere('effective_to', '>=', $when->toDateString());
+            ->where('effective_from', '<=', $dateStr)
+            ->where(function ($q) use ($dateStr) {
+                $q->whereNull('effective_to')->orWhere('effective_to', '>=', $dateStr);
             })
             ->orderBy('effective_from', 'desc')
             ->first();
@@ -92,7 +128,7 @@ class WorkScheduleService
             return null; // มีกะแต่ไม่ใช่วันทำงานของกะนั้น
         }
 
-        // fallback → กะของโปรไฟล์
+        // 4) fallback → กะของโปรไฟล์
         $profile = $this->resolveProfile($employee);
         if ($profile && $profile->work_shift_id && $profile->workShift) {
             if ($this->matchesWorkDays($profile->work_days, $when)) {
@@ -102,6 +138,34 @@ class WorkScheduleService
         }
 
         return null;
+    }
+
+    /**
+     * คำนวณ work_shift_id ของพนักงานในรอบหมุนเวียน ณ วันที่กำหนด
+     * index = (ก้าวที่ห่างจาก anchor + offset ของพนักงาน) mod ความยาวรอบ
+     * คืน null = ช่องนั้นเป็นวันหยุดของรอบ
+     */
+    private function rotationShiftId(EmployeeRotation $assignment, Carbon $when): ?int
+    {
+        $rotation = $assignment->rotation;
+        $sequence = is_array($rotation->sequence) ? array_values($rotation->sequence) : [];
+        $len = count($sequence);
+        if ($len === 0) {
+            return null;
+        }
+
+        $daysPerStep = max(1, (int) $rotation->days_per_step);
+        $anchor = Carbon::parse($rotation->anchor_date)->startOfDay();
+        $target = $when->copy()->startOfDay();
+
+        // จำนวนวันห่าง (มีเครื่องหมาย) แล้วหารเป็น "ก้าว"
+        $diffDays = (int) round(($target->getTimestamp() - $anchor->getTimestamp()) / 86400);
+        $step = (int) floor($diffDays / $daysPerStep);
+
+        $index = (($step + (int) $assignment->offset) % $len + $len) % $len;
+        $val = $sequence[$index] ?? null;
+
+        return ($val === null || $val === '') ? null : (int) $val;
     }
 
     /**

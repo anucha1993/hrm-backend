@@ -104,4 +104,19 @@ class Employee extends Model
     {
         return $this->hasMany(EmployeeDocument::class);
     }
+
+    public function shiftOverrides(): HasMany
+    {
+        return $this->hasMany(ShiftDayOverride::class);
+    }
+
+    public function rotations(): HasMany
+    {
+        return $this->hasMany(EmployeeRotation::class);
+    }
+
+    public function swapRequests(): HasMany
+    {
+        return $this->hasMany(ShiftSwapRequest::class, 'requester_id');
+    }
 }

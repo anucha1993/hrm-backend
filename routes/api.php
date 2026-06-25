@@ -31,6 +31,9 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WorkProfileController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\WorkShiftController;
+use App\Http\Controllers\Api\ShiftRotationController;
+use App\Http\Controllers\Api\ShiftDayOverrideController;
+use App\Http\Controllers\Api\ShiftSwapRequestController;
 use Illuminate\Support\Facades\Route;
 
 // Public
@@ -122,7 +125,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/work-profiles', [WorkProfileController::class, 'index']);
         Route::get('/work-profiles/{workProfile}', [WorkProfileController::class, 'show']);
         Route::get('/holidays', [HolidayController::class, 'index']);
+
+        // หมุนเวียนกะ + กะรายวัน (อ่าน)
+        Route::get('/shift-rotations', [ShiftRotationController::class, 'index']);
+        Route::get('/shift-rotations/{shiftRotation}', [ShiftRotationController::class, 'show']);
+        Route::get('/shift-overrides', [ShiftDayOverrideController::class, 'index']);
     });
+
     Route::middleware('permission:attendance.manage')->group(function () {
         Route::post('/office-locations', [OfficeLocationController::class, 'store']);
         Route::put('/office-locations/{officeLocation}', [OfficeLocationController::class, 'update']);
@@ -140,6 +149,25 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/holidays', [HolidayController::class, 'store']);
         Route::put('/holidays/{holiday}', [HolidayController::class, 'update']);
         Route::delete('/holidays/{holiday}', [HolidayController::class, 'destroy']);
+
+        // หมุนเวียนกะ (จัดการ)
+        Route::post('/shift-rotations', [ShiftRotationController::class, 'store']);
+        Route::put('/shift-rotations/{shiftRotation}', [ShiftRotationController::class, 'update']);
+        Route::delete('/shift-rotations/{shiftRotation}', [ShiftRotationController::class, 'destroy']);
+        Route::post('/shift-rotations/{shiftRotation}/assignments', [ShiftRotationController::class, 'storeAssignment']);
+        Route::delete('/shift-rotations/{shiftRotation}/assignments/{assignment}', [ShiftRotationController::class, 'destroyAssignment']);
+
+        // กะรายวัน (ปรับมือ)
+        Route::post('/shift-overrides', [ShiftDayOverrideController::class, 'store']);
+        Route::delete('/shift-overrides/{shiftDayOverride}', [ShiftDayOverrideController::class, 'destroy']);
+
+        // คำขอสลับกะ (เจ้าหน้าที่/แอดมินเท่านั้น)
+        Route::get('/shift-swaps', [ShiftSwapRequestController::class, 'index']);
+        Route::post('/shift-swaps', [ShiftSwapRequestController::class, 'store']);
+        Route::post('/shift-swaps/{shiftSwapRequest}/approve', [ShiftSwapRequestController::class, 'approve']);
+        Route::post('/shift-swaps/{shiftSwapRequest}/reject', [ShiftSwapRequestController::class, 'reject']);
+        Route::post('/shift-swaps/{shiftSwapRequest}/cancel', [ShiftSwapRequestController::class, 'cancel']);
+        Route::delete('/shift-swaps/{shiftSwapRequest}', [ShiftSwapRequestController::class, 'destroy']);
 
         // แก้ไข/เพิ่ม/ลบ Attendance ย้อนหลัง (HR/Admin)
         Route::post('/attendance/manual', [AttendanceController::class, 'storeManual']);
