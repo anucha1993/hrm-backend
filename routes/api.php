@@ -392,5 +392,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/tasks/summary', [ReportController::class, 'tasksSummary']);
         Route::get('/tasks/export', [ReportController::class, 'tasksExport']);
         Route::get('/payslip/{slip}', [ReportController::class, 'payslipShow']);
+        Route::get('/payslips', [ReportController::class, 'payslipsByPeriod']);
     });
 });

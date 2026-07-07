@@ -9,6 +9,7 @@ use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\OtSessionEmployee;
 use App\Models\PayrollPeriod;
+use App\Models\PayrollSetting;
 use App\Models\PayrollSlip;
 use App\Models\Task;
 use Carbon\Carbon;
@@ -571,46 +572,98 @@ class ReportController extends Controller
 
     public function payslipShow(int $slipId): JsonResponse
     {
-        $slip = PayrollSlip::with(['employee.department', 'employee.employmentType', 'period'])
+        $slip = PayrollSlip::with(['employee.department', 'employee.employmentType', 'period', 'items'])
             ->findOrFail($slipId);
 
-        return response()->json([
-            'data' => [
-                'slip_id'   => $slip->id,
-                'status'    => $slip->status,
-                'period'    => [
-                    'id'         => $slip->period?->id,
-                    'code'       => $slip->period?->code,
-                    'name'       => $slip->period?->name,
-                    'start_date' => $slip->period?->start_date,
-                    'end_date'   => $slip->period?->end_date,
-                    'pay_date'   => $slip->period?->pay_date,
-                ],
-                'employee'  => [
-                    'id'             => $slip->employee?->id,
-                    'employee_code'  => $slip->employee?->employee_code,
-                    'employee_name'  => trim(($slip->employee?->first_name ?? '') . ' ' . ($slip->employee?->last_name ?? '')),
-                    'department'     => optional($slip->employee?->department)->name,
-                    'employment_type'=> optional($slip->employee?->employmentType)->name,
-                    'hire_date'      => $slip->employee?->hire_date,
-                ],
-                'earnings' => [
-                    'base_salary' => (float) $slip->base_salary,
-                    'ot_pay'      => (float) $slip->ot_pay,
-                    'bonus_total' => (float) $slip->bonus_total,
-                    'gross_pay'   => (float) $slip->gross_pay,
-                ],
-                'deductions' => [
-                    'late_deduction'       => (float) $slip->late_deduction,
-                    'absent_deduction'     => (float) $slip->absent_deduction,
-                    'other_deductions_total' => (float) $slip->other_deductions_total,
-                    'tax'                  => (float) $slip->tax,
-                    'ssf_employee'         => (float) $slip->ssf_employee,
-                    'deductions_total'     => (float) $slip->deductions_total,
-                ],
-                'net_pay'  => (float) $slip->net_pay,
+        return response()->json(['data' => $this->buildPayslipDto($slip)]);
+    }
+
+    /**
+     * GET /reports/payslips?period_id=X — payslip ทั้งงวด (สำหรับพิมพ์รวบเดียว)
+     */
+    public function payslipsByPeriod(Request $request): JsonResponse
+    {
+        $slips = PayrollSlip::with(['employee.department', 'employee.employmentType', 'period', 'items'])
+            ->when($request->integer('period_id'), fn ($q, $pid) => $q->where('payroll_period_id', $pid))
+            ->when($request->string('status')->toString(), fn ($q, $s) => $q->where('status', $s))
+            ->get()
+            ->sortBy(fn ($s) => $s->employee?->employee_code)
+            ->values();
+
+        return response()->json(['data' => $slips->map(fn ($s) => $this->buildPayslipDto($s))->values()]);
+    }
+
+    protected function buildPayslipDto(PayrollSlip $slip): array
+    {
+        return [
+            'slip_id'   => $slip->id,
+            'slip_no'   => $slip->slip_no,
+            'status'    => $slip->status,
+            'company'   => $this->payslipCompany(),
+            'period'    => [
+                'id'         => $slip->period?->id,
+                'code'       => $slip->period?->code,
+                'name'       => $slip->period?->name,
+                'start_date' => $slip->period?->start_date,
+                'end_date'   => $slip->period?->end_date,
+                'pay_date'   => $slip->period?->pay_date,
             ],
-        ]);
+            'employee'  => [
+                'id'             => $slip->employee?->id,
+                'employee_code'  => $slip->employee?->employee_code,
+                'employee_name'  => trim(($slip->employee?->first_name ?? '') . ' ' . ($slip->employee?->last_name ?? '')),
+                'department'     => optional($slip->employee?->department)->name,
+                'employment_type'=> optional($slip->employee?->employmentType)->name,
+                'hire_date'      => $slip->employee?->hire_date,
+                'bank_name'      => $slip->employee?->bank_name,
+                'bank_account_no'=> $slip->employee?->bank_account_no,
+            ],
+            'meta'      => [
+                'present_days'   => (int) $slip->present_days,
+                'working_days'   => (int) $slip->working_days,
+                'daily_rate'     => (float) $slip->daily_rate,
+                'ot_hours_total' => (float) $slip->ot_hours_total,
+            ],
+            'earnings' => [
+                'base_salary'      => (float) $slip->base_salary,
+                'base_pay'         => (float) $slip->base_pay,
+                'ot_pay'           => (float) $slip->ot_pay,
+                'allowances_total' => (float) $slip->allowances_total,
+                'bonus_total'      => (float) $slip->bonus_total,
+                'gross_pay'        => (float) $slip->gross_pay,
+            ],
+            'deductions' => [
+                'late_deduction'       => (float) $slip->late_deduction,
+                'absent_deduction'     => (float) $slip->absent_deduction,
+                'other_deductions_total' => (float) $slip->other_deductions_total,
+                'tax'                  => (float) $slip->tax,
+                'ssf_employee'         => (float) $slip->ssf_employee,
+                'deductions_total'     => (float) $slip->deductions_total,
+            ],
+            'items' => $slip->items
+                ->sortBy('order')
+                ->map(fn ($it) => [
+                    'type'     => $it->type,
+                    'source'   => $it->source,
+                    'code'     => $it->code,
+                    'name'     => $it->name,
+                    'amount'   => (float) $it->amount,
+                    'quantity' => $it->quantity !== null ? (float) $it->quantity : null,
+                    'rate'     => $it->rate !== null ? (float) $it->rate : null,
+                ])->values(),
+            'net_pay'  => (float) $slip->net_pay,
+        ];
+    }
+
+    /** หัวกระดาษสลิป (ชื่อ/ที่อยู่บริษัท) — อ่านจาก payroll_settings, memoize ต่อ request */
+    protected ?array $payslipCompanyCache = null;
+
+    protected function payslipCompany(): array
+    {
+        return $this->payslipCompanyCache ??= [
+            'name'    => (string) (PayrollSetting::get('company_name') ?: 'บริษัท ชาญเจริญคอนกรีต จำกัด'),
+            'address' => (string) (PayrollSetting::get('company_address') ?: ''),
+        ];
     }
 
     /* =================== helpers =================== */
