@@ -28,6 +28,7 @@ class EmployeeController extends Controller
                 $w->where('employee_code', 'like', "%{$s}%")
                   ->orWhere('first_name', 'like', "%{$s}%")
                   ->orWhere('last_name', 'like', "%{$s}%")
+                  ->orWhere('nickname', 'like', "%{$s}%")
                   ->orWhere('national_id', 'like', "%{$s}%")
                   ->orWhere('phone', 'like', "%{$s}%");
             });
