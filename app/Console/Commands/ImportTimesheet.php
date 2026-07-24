@@ -18,6 +18,8 @@ class ImportTimesheet extends Command
         {file : path ไปยังไฟล์ .xlsx (เช่น d:/Programing/CYC-HRM/time.xlsx)}
         {--sheet=0 : ลำดับชีตที่มีข้อมูล (เริ่มจาก 0)}
         {--update-types : ปรับ "ประเภทการจ้าง" ของพนักงานตามไฟล์ด้วย}
+        {--from= : นำเข้าเฉพาะวันที่ตั้งแต่ (YYYY-MM-DD)}
+        {--to= : นำเข้าเฉพาะวันที่ถึง (YYYY-MM-DD)}
         {--dry-run : แสดงผลโดยไม่บันทึกลงฐานข้อมูล}';
 
     protected $description = 'นำเข้าบันทึกเวลาเข้า-ออกจากไฟล์ timesheet (รูปแบบ ชม./นาที แยกคอลัมน์) และปรับประเภทการจ้างตามไฟล์';
@@ -50,6 +52,8 @@ class ImportTimesheet extends Command
         $dry = (bool) $this->option('dry-run');
         $updateTypes = (bool) $this->option('update-types');
         $sheetIdx = (int) $this->option('sheet');
+        $fromDate = $this->parseSerialDate($this->option('from')); // 'Y-m-d' หรือ null (รองรับ พ.ศ. ด้วย)
+        $toDate = $this->parseSerialDate($this->option('to'));
 
         $this->schedule = new WorkScheduleService();
 
@@ -97,14 +101,16 @@ class ImportTimesheet extends Command
         $skippedDup = 0;
         $skippedNoEmp = 0;
         $skippedPiece = 0;
+        $skippedOutRange = 0;
         $pieceEmps = [];
         $rowsWithMissingEmp = [];
 
         $run = function () use (
             $data, $cols, $employees, $codeType, $typeByName, $updateTypes, $dry, $pieceId,
+            $fromDate, $toDate,
             &$created, &$skippedNoTime, &$skippedDup, &$skippedNoEmp,
             &$missingCodes, &$typeUpdated, &$typeUnknown, &$rowsWithMissingEmp,
-            &$skippedPiece, &$pieceEmps
+            &$skippedPiece, &$pieceEmps, &$skippedOutRange
         ) {
             // ปรับประเภทการจ้าง
             if ($updateTypes) {
@@ -130,6 +136,12 @@ class ImportTimesheet extends Command
 
                 $dateStr = $this->parseSerialDate($r[$cols['date']] ?? null);
                 if ($dateStr === null) continue;
+
+                // กรองช่วงวันที่ (ถ้าระบุ --from/--to) — เทียบแบบ string ได้เพราะเป็น Y-m-d
+                if (($fromDate !== null && $dateStr < $fromDate) || ($toDate !== null && $dateStr > $toDate)) {
+                    $skippedOutRange++;
+                    continue;
+                }
 
                 $in = $this->parseHm($r[$cols['in_h']] ?? null, $r[$cols['in_m']] ?? null);
                 $out = $this->parseHm($r[$cols['out_h']] ?? null, $r[$cols['out_m']] ?? null);
@@ -171,8 +183,12 @@ class ImportTimesheet extends Command
         // === รายงานผล ===
         $this->newLine();
         $this->info(($dry ? '[DRY-RUN] ' : '') . 'สรุปผลการนำเข้า');
+        if ($fromDate !== null || $toDate !== null) {
+            $this->line('  • ช่วงวันที่: ' . ($fromDate ?? 'ต้นไฟล์') . ' ถึง ' . ($toDate ?? 'ท้ายไฟล์'));
+        }
         $this->line("  • เวลาเข้า-ออกที่สร้าง: <fg=green>{$created}</> records");
         $this->line("  • ข้ามเพราะซ้ำ: {$skippedDup}");
+        $this->line("  • ข้ามเพราะนอกช่วงวันที่: {$skippedOutRange} rows");
         $this->line("  • ข้ามเพราะไม่พบพนักงาน: {$skippedNoEmp} records");
         $this->line("  • ข้ามพนักงานจ้างตามชิ้นงาน (งานเหมา): <fg=yellow>{$skippedPiece}</> records / " . count($pieceEmps) . " คน");
         if ($updateTypes) {
