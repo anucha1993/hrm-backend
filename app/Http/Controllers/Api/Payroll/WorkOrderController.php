@@ -28,6 +28,8 @@ class WorkOrderController extends Controller
         if ($periodType = $request->string('period_type')->toString()) $q->where('period_type', $periodType);
         if ($leaderId = $request->integer('team_leader_id')) $q->where('team_leader_id', $leaderId);
         if ($periodId = $request->integer('payroll_period_id')) $q->where('payroll_period_id', $periodId);
+        if ($batchCode = $request->string('batch_code')->toString()) $q->where('batch_code', $batchCode);
+        if ($code = $request->string('code')->toString()) $q->where('code', 'like', "%{$code}%");
 
         $rows = $q->orderByDesc('start_date')->orderByDesc('id')
             ->paginate(min(100, (int) $request->integer('per_page', 30)));
@@ -46,7 +48,32 @@ class WorkOrderController extends Controller
             'extraItems',
             'creator',
         ]);
-        return response()->json(['data' => $workOrder]);
+
+        // ใบงานอื่นที่อยู่ "ลอตผลิตเดียวกัน" (batch_code ตรงกัน) — ช่วยให้เห็นว่าถูกแบ่งงานร่วมกับใบไหนบ้าง
+        $linked = collect();
+        if ($workOrder->batch_code) {
+            $linked = WorkOrder::with('teamLeader')
+                ->where('batch_code', $workOrder->batch_code)
+                ->where('id', '!=', $workOrder->id)
+                ->orderBy('code')
+                ->get()
+                ->map(fn (WorkOrder $w) => [
+                    'id' => $w->id,
+                    'code' => $w->code,
+                    'status' => $w->status,
+                    'total_amount' => $w->total_amount,
+                    'team_leader_id' => $w->team_leader_id,
+                    'team_leader_code' => $w->teamLeader?->employee_code,
+                    'team_leader_name' => $w->teamLeader ? trim($w->teamLeader->first_name . ' ' . $w->teamLeader->last_name) : null,
+                ])
+                ->values();
+        }
+
+        $data = $workOrder->toArray();
+        $data['linked_work_orders'] = $linked;
+        $data['batch_total_amount'] = round((float) $workOrder->total_amount + $linked->sum('total_amount'), 2);
+
+        return response()->json(['data' => $data]);
     }
 
     public function store(Request $request): JsonResponse
@@ -63,12 +90,14 @@ class WorkOrderController extends Controller
                 'location_name' => $data['location_name'] ?? null,
                 'status' => $data['status'] ?? 'draft',
                 'note' => $data['note'] ?? null,
+                'batch_code' => $data['batch_code'] ?? null,
                 'created_by' => $request->user()?->id,
             ]);
             $this->saveItems($wo, $data['items']);
             $this->saveMembers($wo, $data['members'] ?? []);
             $this->saveExtras($wo, $data['extras'] ?? []);
             $wo->recalculate();
+            $this->syncPayrollAfterRecalculate($wo);
             return $wo;
         });
 
@@ -92,6 +121,7 @@ class WorkOrderController extends Controller
                 'location_name' => $data['location_name'] ?? null,
                 'status' => $data['status'] ?? null,
                 'note' => $data['note'] ?? null,
+                'batch_code' => $data['batch_code'] ?? null,
             ], fn($v) => $v !== null));
 
             if (isset($data['items'])) {
@@ -112,6 +142,7 @@ class WorkOrderController extends Controller
             }
 
             $workOrder->recalculate();
+            $this->syncPayrollAfterRecalculate($workOrder);
         });
 
         return $this->show($workOrder->fresh());
@@ -124,6 +155,58 @@ class WorkOrderController extends Controller
         }
         $workOrder->delete();
         return response()->json(['message' => 'deleted']);
+    }
+
+    /**
+     * เชื่อมใบงานนี้กับใบงานอื่นให้เป็น "ลอตผลิตเดียวกัน" (batch_code เดียวกัน)
+     * ทำงานแบบ 2 ทาง (ทั้งสองใบจะเห็นกันและกันเป็นลอตเดียวกันทันที) และรวมกลุ่มเดิม
+     * ของทั้งสองฝั่ง (ถ้ามีใบอื่นผูกอยู่ก่อนแล้ว) เข้าด้วยกันเป็นรหัสเดียว
+     */
+    public function linkBatch(Request $request, WorkOrder $workOrder): JsonResponse
+    {
+        $data = $request->validate([
+            'target_work_order_id' => ['required', 'integer', Rule::exists('work_orders', 'id')],
+        ]);
+
+        if ((int) $data['target_work_order_id'] === $workOrder->id) {
+            return response()->json(['message' => 'ไม่สามารถเชื่อมใบงานกับตัวเองได้'], 422);
+        }
+
+        $target = WorkOrder::findOrFail($data['target_work_order_id']);
+
+        DB::transaction(function () use ($workOrder, $target) {
+            $code = $workOrder->batch_code ?: $target->batch_code ?: ('LOT-' . $workOrder->code);
+
+            // รวมกลุ่มเดิมของทั้งสองฝั่ง (ถ้ามี) เข้าเป็นรหัสเดียวกัน เพื่อให้เชื่อมกันครบวงจร (transitive)
+            $oldCodes = array_values(array_unique(array_filter([$workOrder->batch_code, $target->batch_code])));
+            if ($oldCodes) {
+                WorkOrder::whereIn('batch_code', $oldCodes)->update(['batch_code' => $code]);
+            }
+            $workOrder->update(['batch_code' => $code]);
+            $target->update(['batch_code' => $code]);
+        });
+
+        return $this->show($workOrder->fresh());
+    }
+
+    /**
+     * ยกเลิกการเชื่อมลอตผลิตของใบงานนี้ (ตัวเองออกจากกลุ่มเท่านั้น)
+     * ถ้าเหลือใบเดียวในกลุ่มเดิม จะเคลียร์รหัสของใบที่เหลือด้วย (ผูกกับตัวเองคนเดียวไม่มีประโยชน์)
+     */
+    public function unlinkBatch(WorkOrder $workOrder): JsonResponse
+    {
+        DB::transaction(function () use ($workOrder) {
+            $oldCode = $workOrder->batch_code;
+            $workOrder->update(['batch_code' => null]);
+            if ($oldCode) {
+                $remaining = WorkOrder::where('batch_code', $oldCode)->get();
+                if ($remaining->count() === 1) {
+                    $remaining->first()->update(['batch_code' => null]);
+                }
+            }
+        });
+
+        return $this->show($workOrder->fresh());
     }
 
     // ---------- DAILY ENTRIES ----------
@@ -150,6 +233,7 @@ class WorkOrderController extends Controller
                 ]);
             }
             $workOrder->refresh()->recalculate();
+            $this->syncPayrollAfterRecalculate($workOrder);
         });
 
         return $this->show($workOrder->fresh());
@@ -178,6 +262,7 @@ class WorkOrderController extends Controller
                 ]);
             }
             $workOrder->refresh()->recalculate();
+            $this->syncPayrollAfterRecalculate($workOrder);
         });
 
         return $this->show($workOrder->fresh());
@@ -192,8 +277,54 @@ class WorkOrderController extends Controller
         DB::transaction(function () use ($dailyEntry, $workOrder) {
             $dailyEntry->delete();
             $workOrder->refresh()->recalculate();
+            $this->syncPayrollAfterRecalculate($workOrder);
         });
         return $this->show($workOrder->fresh());
+    }
+
+    /**
+     * เมื่อ total_amount ของใบงานถูกคำนวณใหม่ (จากบันทึกผลรายวัน) และใบงานนี้
+     * ถูกนำเข้า payroll ไปแล้ว (มี payroll_period_id) ให้ปรับยอด PayrollSlipItem
+     * (PRODUCTION_WAGE) + gross_pay/net_pay ของ slip หัวหน้าทีมให้ตรงกับยอดใหม่ทันที
+     * (รวมทุกใบงานของหัวหน้าทีมคนเดียวกันในงวดเดียวกัน ไม่ใช่แค่ใบนี้ใบเดียว)
+     */
+    private function syncPayrollAfterRecalculate(WorkOrder $workOrder): void
+    {
+        if (!$workOrder->payroll_period_id) return;
+
+        $slip = PayrollSlip::where('payroll_period_id', $workOrder->payroll_period_id)
+            ->where('employee_id', $workOrder->team_leader_id)
+            ->first();
+        if (!$slip) return;
+
+        $orders = WorkOrder::where('payroll_period_id', $workOrder->payroll_period_id)
+            ->where('team_leader_id', $workOrder->team_leader_id)
+            ->get();
+        $newAmount = round((float) $orders->sum('total_amount'), 2);
+        $count = $orders->count();
+
+        $item = PayrollSlipItem::where('payroll_slip_id', $slip->id)->where('code', 'PRODUCTION_WAGE')->first();
+        $oldAmount = $item ? (float) $item->amount : 0.0;
+
+        if ($item) {
+            $item->update([
+                'amount' => $newAmount,
+                'quantity' => $count,
+                'name' => "ค่าจ้างการผลิต ({$count} ใบงาน)",
+            ]);
+        } else {
+            $item = PayrollSlipItem::create([
+                'payroll_slip_id' => $slip->id, 'type' => 'earning', 'source' => 'production',
+                'code' => 'PRODUCTION_WAGE', 'name' => "ค่าจ้างการผลิต ({$count} ใบงาน)",
+                'amount' => $newAmount, 'quantity' => $count, 'rate' => 0,
+                'taxable' => true, 'affects_ssf' => true, 'reference_type' => 'work_order',
+            ]);
+        }
+
+        $delta = round($newAmount - $oldAmount, 2);
+        $slip->gross_pay = round((float) $slip->gross_pay + $delta, 2);
+        $slip->net_pay = round((float) $slip->net_pay + $delta, 2);
+        $slip->save();
     }
 
     // ---------- SUMMARY + PAYROLL IMPORT ----------
@@ -281,16 +412,15 @@ class WorkOrderController extends Controller
                 ]);
                 $imported++;
             }
-            // ปิดใบงานทุกใบที่อยู่ใน byLeader (เฉพาะที่มี slip เท่านั้น)
+            // ผูกใบงานทุกใบเข้ากับงวดนี้ (เฉพาะที่มี slip เท่านั้น) — ยังไม่เปลี่ยนสถานะเป็น "จ่ายแล้ว"
+            // จนกว่างวดเงินเดือนนี้จะถูกจ่ายจริง (ดู PayrollPeriodController::update)
             foreach ($orders as $o) {
                 $slip = PayrollSlip::where('payroll_period_id', $data['payroll_period_id'])
                     ->where('employee_id', $o->team_leader_id)
                     ->first();
                 if (!$slip) continue;
                 $o->update([
-                    'status' => 'paid',
                     'payroll_period_id' => $data['payroll_period_id'],
-                    'paid_at' => now(),
                 ]);
             }
         });
@@ -315,6 +445,7 @@ class WorkOrderController extends Controller
             'location_name' => ['nullable', 'string', 'max:200'],
             'status' => ['sometimes', Rule::in(['draft', 'in_progress', 'completed'])],
             'note' => ['nullable', 'string', 'max:500'],
+            'batch_code' => ['nullable', 'string', 'max:40'],
             'items' => [$req, 'array', 'min:1'],
             'items.*.production_rate_item_id' => ['required', 'exists:production_rate_items,id'],
             'items.*.target_qty' => ['required', 'numeric', 'min:0'],

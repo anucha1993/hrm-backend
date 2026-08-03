@@ -14,7 +14,7 @@ class WorkOrder extends Model
     protected $fillable = [
         'code', 'start_date', 'end_date', 'period_type',
         'team_leader_id', 'location_name', 'total_amount', 'status',
-        'payroll_period_id', 'paid_at', 'note', 'created_by',
+        'payroll_period_id', 'paid_at', 'note', 'batch_code', 'created_by',
     ];
 
     protected $casts = [

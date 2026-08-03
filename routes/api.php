@@ -232,6 +232,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payroll/work-orders/{workOrder}/daily-entries', [WorkOrderController::class, 'storeDailyEntry']);
         Route::put('/payroll/work-orders/{workOrder}/daily-entries/{dailyEntry}', [WorkOrderController::class, 'updateDailyEntry']);
         Route::delete('/payroll/work-orders/{workOrder}/daily-entries/{dailyEntry}', [WorkOrderController::class, 'destroyDailyEntry']);
+        Route::post('/payroll/work-orders/{workOrder}/link-batch', [WorkOrderController::class, 'linkBatch']);
+        Route::post('/payroll/work-orders/{workOrder}/unlink-batch', [WorkOrderController::class, 'unlinkBatch']);
         Route::post('/payroll/work-orders/import-to-payroll', [WorkOrderController::class, 'importToPayroll']);
     });
 

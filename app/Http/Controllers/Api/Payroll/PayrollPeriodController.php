@@ -62,7 +62,17 @@ class PayrollPeriodController extends Controller
             'status' => ['sometimes', Rule::in(['draft', 'computing', 'pending_l1', 'pending_l2', 'approved', 'paid', 'cancelled'])],
             'note' => ['nullable', 'string'],
         ]);
+        $wasPaid = $period->status === 'paid';
         $period->update($data);
+
+        // เมื่องวดนี้ถูกเปลี่ยนสถานะเป็น "จ่ายแล้ว" ครั้งแรก ให้ปิดใบงาน (Work Order)
+        // ที่ผูกกับงวดนี้และยัง "เสร็จแล้ว" อยู่ ให้เป็น "จ่ายแล้ว" ตามไปด้วย
+        if (! $wasPaid && $period->status === 'paid') {
+            \App\Models\WorkOrder::where('payroll_period_id', $period->id)
+                ->where('status', 'completed')
+                ->update(['status' => 'paid', 'paid_at' => now()]);
+        }
+
         return response()->json(['data' => $period->fresh()]);
     }
 

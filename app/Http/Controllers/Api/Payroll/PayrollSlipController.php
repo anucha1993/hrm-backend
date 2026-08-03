@@ -63,8 +63,19 @@ class PayrollSlipController extends Controller
             $empId = optional($user->employee)->id;
             abort_unless($slip->employee_id === $empId, 403);
         }
+
+        $slip->load(['items', 'employee', 'period', 'approvals.user:id,name']);
+
+        // ถ้ามีรายการค่าจ้างการผลิต ให้แนบใบงาน (work orders) ของหัวหน้าทีมในงวดนี้มาด้วย
+        if ($slip->items->contains(fn ($item) => $item->code === 'PRODUCTION_WAGE')) {
+            $slip->setAttribute('work_orders', \App\Models\WorkOrder::where('payroll_period_id', $slip->payroll_period_id)
+                ->where('team_leader_id', $slip->employee_id)
+                ->orderBy('code')
+                ->get(['id', 'code', 'status', 'total_amount', 'start_date', 'end_date']));
+        }
+
         return response()->json([
-            'data' => $slip->load(['items', 'employee', 'period', 'approvals.user:id,name']),
+            'data' => $slip,
         ]);
     }
 
