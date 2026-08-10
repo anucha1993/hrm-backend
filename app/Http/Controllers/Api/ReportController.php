@@ -144,7 +144,7 @@ class ReportController extends Controller
             ->whereBetween('checked_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
             ->get();
 
-        $totalDays = $from->diffInDays($to) + 1;
+        $totalDays = (int) round($from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay())) + 1;
         $totalLate = $rows->filter(fn ($r) => $r->status === 'late' || ($r->late_minutes ?? 0) > 0)
             ->groupBy(fn ($r) => $r->employee_id . '|' . $r->checked_at->toDateString())->count();
         $totalLateMinutes = (int) $rows->sum('late_minutes');

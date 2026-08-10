@@ -171,6 +171,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // แก้ไข/เพิ่ม/ลบ Attendance ย้อนหลัง (HR/Admin)
         Route::post('/attendance/manual', [AttendanceController::class, 'storeManual']);
+        Route::post('/attendance/manual-bulk', [AttendanceController::class, 'storeManualBulk']);
         Route::patch('/attendance/{attendance}', [AttendanceController::class, 'update']);
         Route::delete('/attendance/{attendance}', [AttendanceController::class, 'destroy']);
         Route::get('/attendance/{attendance}/audit-logs', [AttendanceController::class, 'auditLogs']);

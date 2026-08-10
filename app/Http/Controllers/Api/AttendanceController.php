@@ -287,6 +287,120 @@ class AttendanceController extends Controller
     }
 
     /**
+     * HR/Admin: เพิ่มเวลาย้อนหลังของพนักงาน "คนเดียว" ทีเดียวหลายวัน
+     * รับ employee_id + days[] (แต่ละวันมี date + check_in/check_out เวลา HH:MM ได้อย่างใดอย่างหนึ่งหรือทั้งคู่)
+     */
+    public function storeManualBulk(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'employee_id'         => ['required', 'exists:employees,id'],
+            'reason'              => ['required', 'string', 'min:5', 'max:500'],
+            'work_shift_id'       => ['nullable', 'exists:work_shifts,id'],
+            'office_location_id'  => ['nullable', 'exists:office_locations,id'],
+            'days'                => ['required', 'array', 'min:1', 'max:62'],
+            'days.*.date'         => ['required', 'date'],
+            'days.*.check_in'     => ['nullable', 'date_format:H:i'],
+            'days.*.check_out'    => ['nullable', 'date_format:H:i'],
+            'days.*.note'         => ['nullable', 'string', 'max:500'],
+            'days.*.is_ot'        => ['boolean'],
+        ]);
+
+        $employee = Employee::findOrFail($data['employee_id']);
+        $shiftId  = $data['work_shift_id'] ?? null;
+
+        $createdIds = [];
+        $skipped = [];
+
+        foreach ($data['days'] as $day) {
+            foreach (['check_in', 'check_out'] as $type) {
+                if (empty($day[$type])) {
+                    continue;
+                }
+
+                $checkedAt = Carbon::parse($day['date'] . ' ' . $day[$type], self::TZ)->utc();
+
+                $exists = Attendance::where('employee_id', $employee->id)
+                    ->where('type', $type)
+                    ->whereBetween('checked_at', [$checkedAt->copy()->subMinute(), $checkedAt->copy()->addMinute()])
+                    ->exists();
+                if ($exists) {
+                    $skipped[] = ['date' => $day['date'], 'type' => $type, 'reason' => 'มีบันทึกเวลาในช่วงเวลาเดียวกันอยู่แล้ว'];
+                    continue;
+                }
+
+                $shift = $shiftId ? WorkShift::find($shiftId) : $this->resolveShift($employee, $checkedAt);
+                $status = 'normal';
+                $lateMinutes = null;
+                $local = $checkedAt->copy()->setTimezone(self::TZ);
+
+                if ($shift && ! $this->schedule->isHoliday($employee, $local)) {
+                    if ($type === 'check_in') {
+                        $shiftStart = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->start_time, self::TZ);
+                        $diff = $local->diffInMinutes($shiftStart, false);
+                        if ($diff < -intval($shift->late_grace_minutes ?? 0)) {
+                            $status = 'late';
+                            $lateMinutes = abs($diff);
+                        }
+                    } else {
+                        $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
+                        if ($local->lt($shiftEnd)) {
+                            $status = 'early_leave';
+                        } elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) {
+                            $status = 'overtime';
+                        }
+                    }
+                }
+
+                // ระบุด้วยมือว่าเป็นวัน OT (ไม่ต้องพึ่งการคำนวณจากเวลาออกงานเทียบกะ)
+                if ($type === 'check_out' && ! empty($day['is_ot'])) {
+                    $status = 'overtime';
+                }
+
+                $attendance = Attendance::create([
+                    'employee_id'        => $employee->id,
+                    'type'               => $type,
+                    'checked_at'         => $checkedAt,
+                    'office_location_id' => $data['office_location_id'] ?? null,
+                    'work_shift_id'      => $shift?->id,
+                    'status'             => $status,
+                    'late_minutes'       => $lateMinutes,
+                    'note'               => $day['note'] ?? null,
+                    'source'             => 'manual',
+                    'is_edited'          => true,
+                    'edited_by'          => Auth::id(),
+                    'edited_at'          => now(),
+                    'edit_reason'        => $data['reason'],
+                ]);
+
+                AttendanceAuditLog::create([
+                    'attendance_id' => $attendance->id,
+                    'employee_id'   => $employee->id,
+                    'action'        => 'create',
+                    'old_values'    => null,
+                    'new_values'    => $attendance->only([
+                        'type', 'checked_at', 'status', 'late_minutes',
+                        'work_shift_id', 'office_location_id', 'note',
+                    ]),
+                    'reason'        => $data['reason'],
+                    'user_id'       => Auth::id(),
+                ]);
+
+                $createdIds[] = $attendance->id;
+            }
+        }
+
+        return response()->json([
+            'message' => 'เพิ่มเวลาย้อนหลังหลายวันเรียบร้อย',
+            'summary' => [
+                'created' => count($createdIds),
+                'skipped' => count($skipped),
+                'days'    => count($data['days']),
+            ],
+            'skipped_detail' => $skipped,
+        ], 201);
+    }
+
+    /**
      * HR/Admin: แก้ไข attendance ที่มีอยู่ + บันทึก audit log
      */
     public function update(Request $request, Attendance $attendance): JsonResponse
