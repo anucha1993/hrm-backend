@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\LabourController;
 use App\Http\Controllers\Api\OfficeLocationController;
 use App\Http\Controllers\Api\Payroll\CompensationComponentController;
 use App\Http\Controllers\Api\Payroll\CompensationProfileController;
+use App\Http\Controllers\Api\Payroll\EmployeeAdvanceController;
 use App\Http\Controllers\Api\Payroll\EmployeePayrollController;
 use App\Http\Controllers\Api\Payroll\OtSessionController;
 use App\Http\Controllers\Api\Payroll\PayrollPeriodController;
@@ -314,6 +315,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:leave.approve')->group(function () {
         Route::post('/leave/requests/{leaveRequest}/approve', [LeaveRequestController::class, 'approve']);
         Route::post('/leave/requests/{leaveRequest}/reject', [LeaveRequestController::class, 'reject']);
+    });
+
+    /* ========================= เบิกเงินล่วงหน้า (ADVANCE) ========================= */
+    Route::middleware('permission:advance.request')->group(function () {
+        Route::get('/advances', [EmployeeAdvanceController::class, 'index']);
+        Route::get('/advances/{advance}', [EmployeeAdvanceController::class, 'show']);
+        Route::post('/advances', [EmployeeAdvanceController::class, 'store']);
+        Route::post('/advances/{advance}/cancel', [EmployeeAdvanceController::class, 'cancel']);
+    });
+
+    Route::middleware('permission:advance.approve')->group(function () {
+        Route::post('/advances/{advance}/approve', [EmployeeAdvanceController::class, 'approve']);
+        Route::post('/advances/{advance}/reject', [EmployeeAdvanceController::class, 'reject']);
+        Route::post('/advances/{advance}/mark-paid', [EmployeeAdvanceController::class, 'markPaid']);
+        Route::post('/advances/{advance}/repayments', [EmployeeAdvanceController::class, 'addRepayment']);
+        Route::delete('/advance-repayments/{repayment}', [EmployeeAdvanceController::class, 'deleteRepayment']);
     });
 
     /* ========================= ATTENDANCE SUMMARY ========================= */

@@ -48,6 +48,10 @@ class RolesAndPermissionsSeeder extends Seeder
                 'leave.approve' => 'อนุมัติใบลา',
                 'leave.config' => 'ตั้งค่าประเภทการลา / โควต้า',
             ],
+            'advance' => [
+                'advance.request' => 'ยื่นคำขอเบิกเงินล่วงหน้า และดูของตนเอง',
+                'advance.approve' => 'อนุมัติ/จ่าย/บันทึกการหักคืนเงินล่วงหน้า',
+            ],
             'tasks' => [
                 'tasks.view'   => 'ดูงาน',
                 'tasks.manage' => 'จัดการงาน',
@@ -137,6 +141,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'tasks.view',
             'payroll.view',
             'leave.request',
+            'advance.request',
             'reports.view',
         ];
         $member->permissions()->sync(
@@ -147,6 +152,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $employeePerms = [
             'attendance.checkin',
             'leave.request',
+            'advance.request',
             'payroll.view',
         ];
         $employee->permissions()->sync(
@@ -159,6 +165,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'attendance.view', 'attendance.manage', 'attendance.summary.view',
             'payroll.view', 'payroll.compute', 'payroll.config', 'payroll.ot_manage',
             'leave.request', 'leave.approve', 'leave.config',
+            'advance.request', 'advance.approve',
             'reports.view',
             'master_data.manage',
             'goods_deposits.view', 'goods_deposits.create', 'goods_deposits.update', 'goods_deposits.delete',
@@ -174,6 +181,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'attendance.view', 'attendance.summary.view',
             'payroll.view', 'payroll.approve_l1',
             'leave.request', 'leave.approve',
+            'advance.request', 'advance.approve',
             'reports.view',
             'goods_deposits.view',
         ];
@@ -188,6 +196,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'attendance.view', 'attendance.summary.view',
             'payroll.view', 'payroll.approve_l1', 'payroll.approve_l2', 'payroll.approve', 'payroll.pay',
             'leave.request', 'leave.approve',
+            'advance.request', 'advance.approve',
             'reports.view',
             'goods_deposits.view',
         ];

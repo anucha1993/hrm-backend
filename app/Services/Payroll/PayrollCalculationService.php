@@ -42,7 +42,10 @@ class PayrollCalculationService
             $log['base_salary'] = $baseSalary;
 
             // 2. คำนวณ rate ต่อ ชม. / ต่อวัน
-            $workingDays = max(1, (int) $profile->working_days_per_period);
+            // ใช้จำนวนวันจริงของงวด (start_date..end_date) แทนค่าคงที่ใน profile
+            // เพราะงวดจ่ายเงินของบริษัทนี้เป็นแบบ 2 ครั้ง/เดือน (ประมาณ 15-16 วัน/งวด)
+            // ไม่ใช่เดือนเต็ม (26 วัน) — ใช้ช่วงวันที่ของงวดที่มีอยู่แล้วแทนการฮาร์ดโค้ด
+            $workingDays = max(1, (int) $period->start_date->diffInDays($period->end_date) + 1);
             $workingHours = max(1, (int) $profile->working_hours_per_day);
             $dailyRate = round($baseSalary / $workingDays, 2);
             $hourlyRate = $employeeComp->hourly_rate_override
