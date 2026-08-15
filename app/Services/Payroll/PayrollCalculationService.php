@@ -337,6 +337,13 @@ class PayrollCalculationService
         $lateCount = $lateRows->groupBy(fn ($r) => $r->checked_at->toDateString())->count();
         $lateMinutesTotal = (int) $rows->sum('late_minutes');
 
+        // วันหยุดบริษัทในรอบที่พนักงานไม่มาลงเวลาเลย (ใช้เป็นเหตุ "เสียสิทธิ์" เบี้ยขยันได้ ถ้าตั้งค่าไว้)
+        $schedule = app(\App\Services\WorkScheduleService::class);
+        $profileId = $schedule->resolveProfile($employee)?->id;
+        $holidayDates = collect($schedule->holidaysBetween($profileId, $period->start_date, $period->end_date))
+            ->pluck('date');
+        $holidayAbsentCount = $holidayDates->filter(fn ($d) => ! $byDay->has($d))->count();
+
         return [
             'present_days' => $presentDays,
             'absent_days' => $absentDays + $unpaidLeaveDays, // unpaid leave ถือเสมือนขาดสำหรับหักเงิน
@@ -347,6 +354,7 @@ class PayrollCalculationService
             'late_count' => $lateCount,
             'late_minutes_total' => $lateMinutesTotal,
             'total_days' => $totalDays,
+            'holiday_absent_count' => $holidayAbsentCount,
         ];
     }
 

@@ -21,6 +21,7 @@ class PayrollRuleController extends Controller
     private const ALLOWED_DISQUALIFIERS = [
         'absent', 'late', 'early_leave', 'missing_punch',
         'leave_sick', 'leave_personal', 'leave_vacation', 'leave_maternity', 'leave_other',
+        'holiday_absent',
     ];
 
     public function index(Request $request): JsonResponse
@@ -160,6 +161,7 @@ class PayrollRuleController extends Controller
                 ['value' => 'leave_vacation',  'label' => 'ลาพักร้อน'],
                 ['value' => 'leave_maternity', 'label' => 'ลาคลอด'],
                 ['value' => 'leave_other',     'label' => 'ลาอื่น ๆ'],
+                ['value' => 'holiday_absent',  'label' => 'ไม่มาทำงานในวันหยุด (วันหยุดบริษัท)'],
             ],
             'periods' => [
                 ['value' => 'monthly', 'label' => 'รายเดือน'],

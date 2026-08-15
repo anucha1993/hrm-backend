@@ -162,6 +162,7 @@ class RuleEngineService
             'leave_vacation'  => ($att['leave_breakdown']['vacation'] ?? 0) > 0,
             'leave_maternity' => ($att['leave_breakdown']['maternity'] ?? 0) > 0,
             'leave_other'     => ($att['leave_breakdown']['other'] ?? 0) > 0,
+            'holiday_absent'  => ($att['holiday_absent_count'] ?? 0) > 0,
         ];
 
         return [
