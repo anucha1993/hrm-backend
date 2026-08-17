@@ -114,6 +114,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Attendance: ดูรวม / จัดการ
     Route::middleware('permission:attendance.view')->get('/attendance', [AttendanceController::class, 'index']);
+    Route::middleware('permission:attendance.view')->get('/attendance/roster', [AttendanceController::class, 'roster']);
     Route::middleware('permission:attendance.view')->get('/attendance/export', [AttendanceController::class, 'export']);
 
     // Attendance: นำเข้าเวลาทำงานจาก Excel (HR/Admin)
@@ -380,6 +381,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payroll-rules/{rule}/toggle', [PayrollRuleController::class, 'toggle']);
         Route::put('/payroll-settings', [PayrollRuleController::class, 'settingsBulkUpdate']);
     });
+
+    // ประวัติการ sync จาก HIP Time agent
+    Route::middleware('permission:settings.view')->get('/hiptime/sync-logs', [HipTimeIngestController::class, 'syncLogs']);
 
     /* ========================= GOODS DEPOSITS (ใบมัดจำของใช้ทั่วไป) ========================= */
     Route::middleware('permission:goods_deposits.view')->group(function () {

@@ -7,9 +7,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
 use App\Models\Employee;
+use App\Models\LeaveRequest;
 use App\Models\OfficeLocation;
 use App\Models\WorkShift;
 use App\Services\WorkScheduleService;
+use App\Support\HipTimeAttendanceWindow;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -184,7 +186,167 @@ class AttendanceController extends Controller
         if ($from = $request->date('from')) $q->where('checked_at', '>=', $from);
         if ($to   = $request->date('to'))   $q->where('checked_at', '<=', $to->endOfDay());
 
+        // เครื่องสแกน HIP Time อาจสแกนหลายรอบต่อวัน (เช่น เปิดประตู) — ข้อมูลดิบเก็บไว้ทุก record
+        // แต่แสดงผลแค่ 1 record ที่ดีที่สุดต่อวัน/ประเภท (manual entry ไม่ถูกกรอง)
+        $q->where(fn ($w) => $w->where('source', '!=', 'device')->orWhereIn('id', $this->bestDeviceAttendanceIds($request)));
+
         return response()->json(['data' => $q->paginate($request->integer('per_page', 30))]);
+    }
+
+    /**
+     * หา id ของ record ฝั่งเครื่อง HIP Time ที่ "ดีที่สุด" ต่อ employee/ประเภท/วันงาน
+     * (เข้างาน = เวลาเช้าที่สุด, ออกงาน = เวลาล่าสุด) ให้ index()/export() ใช้กรองไม่ให้เห็น record ซ้ำ
+     */
+    private function bestDeviceAttendanceIds(Request $request): array
+    {
+        $q = Attendance::where('source', 'device')->select('id', 'employee_id', 'type', 'checked_at');
+
+        if ($id = $request->integer('employee_id')) $q->where('employee_id', $id);
+        if ($type = $request->string('type')->toString()) $q->where('type', $type);
+        // ขยายช่วงวันที่ ±1 วัน กันเคสสแกนออกดึกข้ามเที่ยงคืนหลุดขอบเขตของ work_date bucket
+        if ($from = $request->date('from')) $q->where('checked_at', '>=', $from->copy()->subDay());
+        if ($to   = $request->date('to'))   $q->where('checked_at', '<=', $to->copy()->addDay()->endOfDay());
+
+        $best = [];
+        foreach ($q->get() as $row) {
+            $local = $row->checked_at->copy()->setTimezone(self::TZ);
+            $workDate = HipTimeAttendanceWindow::workDateFor($row->type, $local);
+            $key = $row->employee_id . '|' . $row->type . '|' . $workDate;
+
+            if (! isset($best[$key])) {
+                $best[$key] = $row;
+                continue;
+            }
+
+            $isBetter = $row->type === 'check_in'
+                ? $row->checked_at->lt($best[$key]->checked_at)
+                : $row->checked_at->gt($best[$key]->checked_at);
+
+            if ($isBetter) $best[$key] = $row;
+        }
+
+        return array_map(fn ($r) => $r->id, $best);
+    }
+
+    /**
+     * GET /attendance/roster?date=YYYY-MM-DD&department_id=&employee_id=
+     * แสดงรายชื่อพนักงานทั้งหมด "1 คน 1 record ต่อวัน" รวมเข้างาน/ออกงาน/สถานะ (ลา/ขาด/วันหยุด) ไว้ในแถวเดียว
+     * ใช้แทนการแสดงรายการ Attendance ดิบ (ซึ่งอาจมี 2 record ต่อคนต่อวัน แยกเข้า/ออก)
+     */
+    public function roster(Request $request): JsonResponse
+    {
+        $date = $request->date('date') ?: Carbon::today(self::TZ);
+        $dateStr = $date->toDateString();
+
+        $employees = Employee::query()
+            ->where('status', Employee::STATUS_ACTIVE)
+            ->when($request->integer('department_id'), fn ($q, $v) => $q->where('department_id', $v))
+            ->when($request->integer('employee_id'), fn ($q, $v) => $q->where('id', $v))
+            ->with('department:id,code,name')
+            ->orderBy('employee_code')
+            ->get();
+
+        if ($employees->isEmpty()) {
+            return response()->json(['data' => ['date' => $dateStr, 'rows' => []]]);
+        }
+
+        $employeeIds = $employees->pluck('id');
+
+        // ขยายช่วง ±1 วัน กันเคสออกงานข้ามเที่ยงคืนหลุดขอบเขต work_date bucket
+        $windowStart = Carbon::parse($dateStr, self::TZ)->subDay()->startOfDay()->utc();
+        $windowEnd = Carbon::parse($dateStr, self::TZ)->addDay()->endOfDay()->utc();
+
+        $attendances = Attendance::whereIn('employee_id', $employeeIds)
+            ->whereBetween('checked_at', [$windowStart, $windowEnd])
+            ->orderBy('checked_at')
+            ->get();
+
+        // จัดกลุ่มตาม employee_id|type|work_date แล้วเลือก record ที่ "ดีที่สุด" ต่อกลุ่ม
+        // (manual entry มีสิทธิ์เหนือกว่า device เสมอ, ถ้าเป็น device ล้วนใช้เวลาที่เช้าสุด/ล่าสุดตามกติกาเดิม)
+        $buckets = [];
+        foreach ($attendances as $row) {
+            $local = $row->checked_at->copy()->setTimezone(self::TZ);
+            $workDate = HipTimeAttendanceWindow::workDateFor($row->type, $local);
+            if ($workDate !== $dateStr) {
+                continue;
+            }
+            $key = $row->employee_id . '|' . $row->type;
+            $buckets[$key][] = $row;
+        }
+
+        $best = [];
+        foreach ($buckets as $key => $rows) {
+            $manual = array_values(array_filter($rows, fn ($r) => $r->source !== 'device'));
+            $pool = $manual ?: $rows;
+            $type = $pool[0]->type;
+            $winner = $pool[0];
+            foreach ($pool as $row) {
+                $isBetter = $type === 'check_in'
+                    ? $row->checked_at->lt($winner->checked_at)
+                    : $row->checked_at->gt($winner->checked_at);
+                if ($isBetter) $winner = $row;
+            }
+            $best[$key] = $winner;
+        }
+
+        $leaves = LeaveRequest::with('leaveType:id,name')
+            ->whereIn('employee_id', $employeeIds)
+            ->where('status', LeaveRequest::STATUS_APPROVED)
+            ->whereDate('start_date', '<=', $dateStr)
+            ->whereDate('end_date', '>=', $dateStr)
+            ->get()
+            ->keyBy('employee_id');
+
+        $rows = $employees->map(function (Employee $employee) use ($best, $leaves, $date, $dateStr) {
+            $checkIn = $best[$employee->id . '|check_in'] ?? null;
+            $checkOut = $best[$employee->id . '|check_out'] ?? null;
+            $leave = $leaves->get($employee->id);
+
+            $shift = $this->schedule->resolveShift($employee, $date);
+            $isHoliday = $this->schedule->isHoliday($employee, $date);
+
+            if ($leave) {
+                $dayStatus = 'leave';
+            } elseif ($isHoliday) {
+                $dayStatus = 'holiday';
+            } elseif (! $shift) {
+                $dayStatus = 'day_off';
+            } elseif ($checkIn) {
+                $dayStatus = $checkIn->status ?? 'normal';
+            } elseif ($checkOut) {
+                $dayStatus = $checkOut->status ?? 'normal';
+            } elseif ($dateStr <= Carbon::today(self::TZ)->toDateString()) {
+                $dayStatus = 'absent';
+            } else {
+                $dayStatus = 'upcoming';
+            }
+
+            return [
+                'employee' => [
+                    'id'            => $employee->id,
+                    'employee_code' => $employee->employee_code,
+                    'first_name'    => $employee->first_name,
+                    'last_name'     => $employee->last_name,
+                    'department'    => $employee->department ? ['id' => $employee->department->id, 'name' => $employee->department->name] : null,
+                ],
+                'date'        => $dateStr,
+                'day_status'  => $dayStatus,
+                'check_in'    => $checkIn ? [
+                    'id' => $checkIn->id, 'checked_at' => $checkIn->checked_at, 'status' => $checkIn->status,
+                    'late_minutes' => $checkIn->late_minutes, 'source' => $checkIn->source,
+                ] : null,
+                'check_out'   => $checkOut ? [
+                    'id' => $checkOut->id, 'checked_at' => $checkOut->checked_at, 'status' => $checkOut->status,
+                    'late_minutes' => $checkOut->late_minutes, 'source' => $checkOut->source,
+                ] : null,
+                'leave'       => $leave ? [
+                    'id' => $leave->id, 'type' => $leave->leaveType->name ?? '-', 'is_half_day' => $leave->is_half_day,
+                ] : null,
+                'shift'       => $shift ? ['id' => $shift->id, 'name' => $shift->name, 'start_time' => $shift->start_time, 'end_time' => $shift->end_time] : null,
+            ];
+        });
+
+        return response()->json(['data' => ['date' => $dateStr, 'rows' => $rows->values()]]);
     }
 
     /**

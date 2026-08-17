@@ -7,7 +7,9 @@ use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
 use App\Models\Employee;
 use App\Models\EmploymentType;
+use App\Models\HipTimeSyncLog;
 use App\Services\WorkScheduleService;
+use App\Support\HipTimeAttendanceWindow;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +18,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * รับ event การตอกบัตรจาก HIP Time 4.0 (ผลักมาจาก sync agent ฝั่ง on-prem ผ่าน token, ไม่ใช่ user login)
  * ดู /memories/repo/hiptime-integration.md สำหรับ context/สถาปัตยกรรมทั้งหมด
+ *
+ * เก็บทุก record ที่ sync มาไว้หมด ไม่กรอง/ไม่รวมที่นี่ — การเลือก record ที่ดีที่สุดต่อวันมาแสดง
+ * ทำที่ชั้นแสดงผลแทน (ดู AttendanceController::index + App\Support\HipTimeAttendanceWindow)
  */
 class HipTimeIngestController extends Controller
 {
@@ -36,9 +41,6 @@ class HipTimeIngestController extends Controller
             'events.*.datetimescan'   => ['required', 'string'],
             'events.*.timetype'       => ['nullable'],
         ]);
-
-        $checkinTypes = array_map(fn ($v) => strtoupper(trim((string) $v)), config('services.hiptime.checkin_types', []));
-        $checkoutTypes = array_map(fn ($v) => strtoupper(trim((string) $v)), config('services.hiptime.checkout_types', []));
 
         $employeesByEnroll = Employee::whereNotNull('hip_enroll_number')
             ->select('id', 'hip_enroll_number', 'employment_type_id')
@@ -76,19 +78,6 @@ class HipTimeIngestController extends Controller
                 continue;
             }
 
-            $timetype = isset($event['timetype']) ? strtoupper(trim((string) $event['timetype'])) : null;
-            $type = null;
-            if ($timetype !== null && in_array($timetype, $checkinTypes, true)) {
-                $type = 'check_in';
-            } elseif ($timetype !== null && in_array($timetype, $checkoutTypes, true)) {
-                $type = 'check_out';
-            }
-            if ($type === null) {
-                $errors[] = ['source_ref' => $sourceRef, 'error' => "timetype '{$timetype}' ไม่ได้ map ไว้ (ปรับได้ที่ HIPTIME_CHECKIN_TYPES/HIPTIME_CHECKOUT_TYPES)"];
-                $skipped++;
-                continue;
-            }
-
             try {
                 $checkedAt = Carbon::parse($event['datetimescan'], self::TZ);
             } catch (\Throwable $e) {
@@ -96,6 +85,9 @@ class HipTimeIngestController extends Controller
                 $skipped++;
                 continue;
             }
+
+            // จัดประเภทเข้างาน/ออกงานจากเวลาที่สแกนจริง (เครื่องส่ง timetype 'IN' เสมอ ไม่ว่าจะสแกนตอนไหน)
+            [$type] = HipTimeAttendanceWindow::classify($checkedAt);
 
             try {
                 DB::transaction(function () use ($employee, $type, $checkedAt, $sourceRef, $event, &$created) {
@@ -108,18 +100,42 @@ class HipTimeIngestController extends Controller
             }
         }
 
+        $message = "รับข้อมูล {$created} รายการ" . ($skipped > 0 ? " · ข้าม {$skipped} รายการ" : '');
+
+        HipTimeSyncLog::create([
+            'received' => count($data['events']),
+            'created' => $created,
+            'skipped' => $skipped,
+            // array key ตัวเลขล้วน (เช่น "5168") ถูก PHP แปลงเป็น int อัตโนมัติ ต้อง cast กลับเป็น string
+            'unmapped_enroll_numbers' => array_map('strval', array_keys($unmapped)),
+            'unmapped_ids' => array_values($unmappedIds),
+            'errors' => $errors,
+            'message' => $message,
+            'ip' => $request->ip(),
+        ]);
+
         return response()->json([
-            'message' => "รับข้อมูล {$created} รายการ" . ($skipped > 0 ? " · ข้าม {$skipped} รายการ" : ''),
+            'message' => $message,
             'summary' => [
                 'received' => count($data['events']),
                 'created'  => $created,
                 'skipped'  => $skipped,
-                // array key ตัวเลขล้วน (เช่น "5168") ถูก PHP แปลงเป็น int อัตโนมัติ ต้อง cast กลับเป็น string
                 'unmapped_enroll_numbers' => array_map('strval', array_keys($unmapped)),
                 'unmapped_ids' => array_values($unmappedIds),
             ],
             'errors' => $errors,
         ]);
+    }
+
+    /** ดูประวัติการ sync จาก agent (แสดงในหน้าตั้งค่า HIP Time) */
+    public function syncLogs(Request $request): JsonResponse
+    {
+        $logs = HipTimeSyncLog::query()
+            ->orderByDesc('id')
+            ->limit($request->integer('limit', 100))
+            ->get();
+
+        return response()->json(['data' => $logs]);
     }
 
     private function createRecord(Employee $employee, string $type, Carbon $checkedAt, string $sourceRef, $machineNo): void
@@ -172,3 +188,4 @@ class HipTimeIngestController extends Controller
         ]);
     }
 }
+
