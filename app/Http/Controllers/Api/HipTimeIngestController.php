@@ -50,6 +50,8 @@ class HipTimeIngestController extends Controller
         $created = 0;
         $skipped = 0;
         $unmapped = [];
+        // เก็บ id เฉพาะที่ข้ามเพราะ enrollnumber ยัง map ไม่เจอ เพื่อให้ agent รู้ว่าต้อง sync ซ้ำ id นี้ในรอบถัดไป (ไม่ข้ามถาวร)
+        $unmappedIds = [];
         $errors = [];
 
         foreach ($data['events'] as $event) {
@@ -64,6 +66,7 @@ class HipTimeIngestController extends Controller
             $employee = $employeesByEnroll->get($enroll);
             if (! $employee) {
                 $unmapped[$enroll] = true;
+                $unmappedIds[] = $event['id'];
                 $skipped++;
                 continue;
             }
@@ -111,7 +114,9 @@ class HipTimeIngestController extends Controller
                 'received' => count($data['events']),
                 'created'  => $created,
                 'skipped'  => $skipped,
-                'unmapped_enroll_numbers' => array_keys($unmapped),
+                // array key ตัวเลขล้วน (เช่น "5168") ถูก PHP แปลงเป็น int อัตโนมัติ ต้อง cast กลับเป็น string
+                'unmapped_enroll_numbers' => array_map('strval', array_keys($unmapped)),
+                'unmapped_ids' => array_values($unmappedIds),
             ],
             'errors' => $errors,
         ]);
