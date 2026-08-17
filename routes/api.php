@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmploymentTypeController;
 use App\Http\Controllers\Api\GoodsDepositController;
+use App\Http\Controllers\Api\HipTimeIngestController;
 use App\Http\Controllers\Api\LabourController;
 use App\Http\Controllers\Api\OfficeLocationController;
 use App\Http\Controllers\Api\Payroll\CompensationComponentController;
@@ -39,6 +40,9 @@ use Illuminate\Support\Facades\Route;
 
 // Public
 Route::post('/login', [AuthController::class, 'login']);
+
+// เชื่อมต่อจาก sync agent ของ HIP Time 4.0 (token auth, ไม่ใช่ user login)
+Route::middleware('hiptime.token')->post('/hiptime/ingest', [HipTimeIngestController::class, 'store']);
 
 // Authenticated
 Route::middleware('auth:sanctum')->group(function () {

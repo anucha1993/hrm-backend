@@ -35,6 +35,15 @@ return [
         ],
     ],
 
+    'hiptime' => [
+        // token ที่ agent (สคริปต์ฝั่งเครื่องลูก) ส่งมาใน header X-HipTime-Token เพื่อยืนยันตัวตนแบบ machine-to-machine
+        'token' => env('HIPTIME_INGEST_TOKEN'),
+        // ค่า timetype จาก Transcantime ที่ถือว่าเป็นเข้า/ออก (ค่ามาตรฐาน ZKTeco-compatible: 0=เข้า,4=OT เข้า / 1=ออก,5=OT ออก) — ปรับผ่าน .env ได้โดยไม่ต้องแก้โค้ด ถ้าเครื่องจริงใช้ค่าอื่น
+        // หมายเหตุ: ใช้ trim ไม่ใช่ array_filter เฉยๆ เพราะ array_filter ทิ้งสตริง "0" ทิ้งด้วย (falsy ใน PHP)
+        'checkin_types'  => array_values(array_filter(array_map('trim', explode(',', (string) env('HIPTIME_CHECKIN_TYPES', 'IN'))), fn ($v) => $v !== '')),
+        'checkout_types' => array_values(array_filter(array_map('trim', explode(',', (string) env('HIPTIME_CHECKOUT_TYPES', 'OUT'))), fn ($v) => $v !== '')),
+    ],
+
     'labour' => [
         'base_url' => env('LABOUR_API_BASE_URL', 'https://charoenmunconcrete.net'),
         'key'      => env('LABOUR_API_KEY'),

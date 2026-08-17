@@ -31,6 +31,7 @@ class Employee extends Model
         'address',
         'national_id',
         'labour_id',
+        'hip_enroll_number',
         'marital_status',
         'religion',
         'education_level',

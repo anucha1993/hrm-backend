@@ -14,7 +14,7 @@ class Attendance extends Model
         'office_location_id', 'distance_m', 'outside_geofence',
         'work_shift_id', 'status', 'late_minutes',
         'photo_path', 'note',
-        'source', 'is_edited', 'edited_by', 'edited_at', 'edit_reason',
+        'source', 'source_ref', 'is_edited', 'edited_by', 'edited_at', 'edit_reason',
     ];
 
     protected $casts = [

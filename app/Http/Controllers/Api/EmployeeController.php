@@ -124,6 +124,7 @@ class EmployeeController extends Controller
             'user_id'         => ['nullable', 'integer', Rule::unique('employees', 'user_id')->ignore($id), 'exists:users,id'],
             'address'         => ['nullable', 'string'],
             'national_id'     => ['required', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/', Rule::unique('employees', 'national_id')->ignore($id)],
+            'hip_enroll_number' => ['nullable', 'string', 'max:50', Rule::unique('employees', 'hip_enroll_number')->ignore($id)],
             'marital_status'  => ['nullable', 'string', 'max:50'],
             'religion'        => ['nullable', 'string', 'max:50'],
             'education_level' => ['nullable', 'string', 'max:100'],
