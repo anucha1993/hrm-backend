@@ -331,17 +331,33 @@ class PayrollCalculationService
         $leaveDays = (float) $leaveSummary['total_days'];
         $unpaidLeaveDays = (float) $leaveSummary['unpaid_days'];
 
-        // ขาดจริง = วันที่ไม่มา และไม่ได้ลา
-        $absentDays = max(0, $totalDays - $presentDays - $leaveDays);
+        // วันหยุดบริษัท/โปรไฟล์ (Holiday model) + วันหยุดตามตารางงานของพนักงานคนนี้เอง
+        // (แจ้งวันหยุดรายวัน / วันพักตามรอบหมุนเวียน / ไม่ตรง work_days ของกะ) — ไม่นับเป็นวันขาด
+        $schedule = app(\App\Services\WorkScheduleService::class);
+        $profileId = $schedule->resolveProfile($employee)?->id;
+        $holidayDates = collect($schedule->holidaysBetween($profileId, $period->start_date, $period->end_date))
+            ->pluck('date');
+
+        $scheduleOffDates = collect();
+        $cursor = $period->start_date->copy()->startOfDay();
+        $end = $period->end_date->copy()->startOfDay();
+        while ($cursor->lte($end)) {
+            $dateStr = $cursor->toDateString();
+            if (! $holidayDates->contains($dateStr) && ! $schedule->resolveShift($employee, $cursor->copy())) {
+                $scheduleOffDates->push($dateStr);
+            }
+            $cursor->addDay();
+        }
+
+        $expectedWorkDays = max(0, $totalDays - $holidayDates->count() - $scheduleOffDates->count());
+
+        // ขาดจริง = วันที่ต้องทำงานตามตารางแต่ไม่มา และไม่ได้ลา
+        $absentDays = max(0, $expectedWorkDays - $presentDays - $leaveDays);
         $lateRows = $rows->filter(fn ($r) => ($r->late_minutes ?? 0) > 0 || $r->status === 'late');
         $lateCount = $lateRows->groupBy(fn ($r) => $r->checked_at->toDateString())->count();
         $lateMinutesTotal = (int) $rows->sum('late_minutes');
 
         // วันหยุดบริษัทในรอบที่พนักงานไม่มาลงเวลาเลย (ใช้เป็นเหตุ "เสียสิทธิ์" เบี้ยขยันได้ ถ้าตั้งค่าไว้)
-        $schedule = app(\App\Services\WorkScheduleService::class);
-        $profileId = $schedule->resolveProfile($employee)?->id;
-        $holidayDates = collect($schedule->holidaysBetween($profileId, $period->start_date, $period->end_date))
-            ->pluck('date');
         $holidayAbsentCount = $holidayDates->filter(fn ($d) => ! $byDay->has($d))->count();
 
         return [
