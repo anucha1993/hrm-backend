@@ -56,6 +56,43 @@ final class HipTimeAttendanceWindow
             : $localTime->format('Y-m-d');
     }
 
+    /**
+     * จาก scan ทั้งหมดของพนักงานคนเดียวในวันทำงานเดียว (เรียงเวลาน้อย->มากแล้ว) หาว่า index ไหนคือเข้างาน/ออกงาน
+     * - scan ที่อยู่ในช่วงเข้างาน (checkInStart-checkInEnd) ถือเป็นเข้างานเสมอ (เอาอันแรกสุดที่อยู่ในช่วง)
+     * - ถ้าไม่มี scan อยู่ในช่วงเลย (มาสายเกินช่วงเข้างาน) แต่มี scan มากกว่า 1 ครั้ง และสแกนแรกกับสแกนสุดท้ายห่างกันเกิน 2 ชม.
+     *   ให้ถือว่าสแกนแรกคือเข้างาน (มาสายมาก ไม่ใช่แค่เปิดประตูสั้นๆ)
+     * - ออกงาน = สแกนล่าสุดของวันเสมอ ยกเว้นเหลือสแกนเดียวที่ถูกใช้เป็นเข้างานไปแล้ว (ยังไม่ออกงาน)
+     * @param Carbon[] $localTimes เรียงจากน้อยไปมากแล้ว
+     * @return array{check_in: ?int, check_out: ?int}
+     */
+    public static function classifyGroup(array $localTimes): array
+    {
+        $n = count($localTimes);
+        if ($n === 0) {
+            return ['check_in' => null, 'check_out' => null];
+        }
+
+        $checkInIdx = null;
+        foreach ($localTimes as $i => $t) {
+            $time = $t->format('H:i:s');
+            if ($time >= self::checkInStart() && $time < self::checkInEnd()) {
+                $checkInIdx = $i;
+                break;
+            }
+        }
+
+        if ($checkInIdx === null && $n > 1 && $localTimes[0]->diffInMinutes($localTimes[$n - 1]) > 120) {
+            $checkInIdx = 0;
+        }
+
+        $checkOutIdx = $n - 1;
+        if ($checkOutIdx === $checkInIdx) {
+            $checkOutIdx = null;
+        }
+
+        return ['check_in' => $checkInIdx, 'check_out' => $checkOutIdx];
+    }
+
     /** ค่าจากหน้า settings เป็น "HH:MM" แต่เทียบกับ Carbon::format('H:i:s') ต้องมี ":ss" ครบ */
     private static function normalizeTime(mixed $value): string
     {

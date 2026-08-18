@@ -8,6 +8,7 @@ use App\Models\AttendanceAuditLog;
 use App\Models\Employee;
 use App\Models\EmploymentType;
 use App\Models\HipTimeSyncLog;
+use App\Services\HipTimeReclassifyService;
 use App\Services\WorkScheduleService;
 use App\Support\HipTimeAttendanceWindow;
 use Carbon\Carbon;
@@ -27,7 +28,10 @@ class HipTimeIngestController extends Controller
     /** เวลาในไฟล์ HIP_DATA เป็นเวลาประเทศไทย (นาฬิกาเครื่องสแกนตั้งเป็นเวลาท้องถิ่น) */
     private const TZ = 'Asia/Bangkok';
 
-    public function __construct(private readonly WorkScheduleService $schedule)
+    public function __construct(
+        private readonly WorkScheduleService $schedule,
+        private readonly HipTimeReclassifyService $reclassify,
+    )
     {
     }
 
@@ -55,6 +59,8 @@ class HipTimeIngestController extends Controller
         // เก็บ id เฉพาะที่ข้ามเพราะ enrollnumber ยัง map ไม่เจอ เพื่อให้ agent รู้ว่าต้อง sync ซ้ำ id นี้ในรอบถัดไป (ไม่ข้ามถาวร)
         $unmappedIds = [];
         $errors = [];
+        // เก็บคู่ (employee_id, workDate) ที่มี record ใหม่เข้ามา เพื่อจัดประเภทเข้า/ออกงานใหม่ทั้งวันหลัง sync เสร็จ
+        $touchedGroups = [];
 
         foreach ($data['events'] as $event) {
             $sourceRef = 'hiptime:' . $event['id'];
@@ -86,7 +92,8 @@ class HipTimeIngestController extends Controller
                 continue;
             }
 
-            // จัดประเภทเข้างาน/ออกงานจากเวลาที่สแกนจริง (เครื่องส่ง timetype 'IN' เสมอ ไม่ว่าจะสแกนตอนไหน)
+            // จัดประเภทเข้างาน/ออกงานจากเวลาที่สแกนจริง (เครื่องส่ง timetype 'IN' เสมอ ไม่ว่าจะสแกนตอนไหน) — เดาไว้ก่อน
+            // แล้วจัดใหม่ทั้งวันอีกทีด้านล่างหลัง insert ครบ (กันเคสมาสายเกินช่วงเข้างาน ดู HipTimeReclassifyService)
             [$type] = HipTimeAttendanceWindow::classify($checkedAt);
 
             try {
@@ -94,9 +101,19 @@ class HipTimeIngestController extends Controller
                     $this->createRecord($employee, $type, $checkedAt, $sourceRef, $event['machineno'] ?? null);
                 });
                 $created++;
+                $touchedGroups[$employee->id . '|' . $this->reclassify->bucketDate($checkedAt)] = true;
             } catch (\Throwable $e) {
                 $errors[] = ['source_ref' => $sourceRef, 'error' => $e->getMessage()];
                 $skipped++;
+            }
+        }
+
+        foreach (array_keys($touchedGroups) as $group) {
+            [$employeeId, $workDate] = explode('|', $group, 2);
+            try {
+                $this->reclassify->reclassifyGroup((int) $employeeId, $workDate);
+            } catch (\Throwable $e) {
+                $errors[] = ['employee_id' => $employeeId, 'work_date' => $workDate, 'error' => 'reclassify: ' . $e->getMessage()];
             }
         }
 

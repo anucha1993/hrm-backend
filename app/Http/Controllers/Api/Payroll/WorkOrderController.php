@@ -459,7 +459,8 @@ class WorkOrderController extends Controller
             'extras.*.name' => ['required_with:extras', 'string', 'max:255'],
             'extras.*.unit' => ['nullable', 'string', 'max:50'],
             'extras.*.qty' => ['required_with:extras', 'numeric', 'min:0'],
-            'extras.*.rate' => ['required_with:extras', 'numeric', 'min:0'],
+            // ราคา/หน่วยติดลบได้ ใช้แทนรายการหัก (เช่น หักค่าเสียหาย) ในตารางเดียวกันกับรายการจ่ายเพิ่มเติม
+            'extras.*.rate' => ['required_with:extras', 'numeric'],
             'extras.*.note' => ['nullable', 'string', 'max:500'],
         ]);
     }
