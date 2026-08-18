@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Models\EmployeeCompensation;
 use App\Models\EmployeeComponent;
 use App\Models\EmployeeTaxSetting;
+use App\Models\GoodsDepositSlip;
 use App\Models\OtSession;
 use App\Models\OtSessionEmployee;
 use App\Models\PayrollApproval;
@@ -66,6 +67,14 @@ class PayrollCalculationService
                 ->whereNotIn('status', ['paid', 'approved'])
                 ->first();
             if ($existing) {
+                // คืนสถานะใบมัดจำของใช้ทั่วไปที่เคยตัดไว้ในสลิปเก่ากลับเป็น pending ก่อนลบ
+                // ไม่งั้นคำนวณซ้ำ (recompute) จะหาไม่เจอเพราะสถานะยังเป็น deducted อยู่ ทำให้ไม่ถูกตัดเข้าในสลิปใหม่
+                GoodsDepositSlip::where('payslip_id', $existing->id)->update([
+                    'status' => GoodsDepositSlip::STATUS_PENDING,
+                    'payroll_period_id' => null,
+                    'payslip_id' => null,
+                    'deducted_at' => null,
+                ]);
                 $existing->items()->delete();
                 $existing->delete();
             } else {
@@ -214,6 +223,9 @@ class PayrollCalculationService
                 );
             }
 
+            // 12.5 หักยอดใบมัดจำของใช้ทั่วไปที่รอตัดในงวดนี้ (auto — งวดของใบตรงกับงวดจ่ายเงิน)
+            $goodsDepositDeduction = $this->applyGoodsDeposits($slip, $employee, $period, $items, $order);
+
             // 13. คำนวณ gross
             $grossPay = round($basePay + $otPay + $allowances + $bonusTotal, 2);
 
@@ -239,16 +251,17 @@ class PayrollCalculationService
             $log['tax'] = $taxSnapshotMeta;
 
             // 16. รวมยอดหัก / net
-            $deductionsTotal = round($componentDeductions + $ruleDeductions + $lateDeduction + $absentDeduction, 2);
+            $deductionsTotal = round($componentDeductions + $ruleDeductions + $lateDeduction + $absentDeduction + $goodsDepositDeduction, 2);
 
             // 16.5 apply global caps (max_deduction_percent / min_net_salary)
+            // แสดงเป็นรายการ "หัก" ติดลบ (ลดยอดหักรวม) ไม่ใช่รายได้ เพื่อไม่ให้ปนกับยอดรายได้จริง (gross_pay)
             $caps = app(RuleEngineService::class)->applyGlobalCaps($baseSalary, $deductionsTotal);
             if ($caps['capped']) {
                 $delta = round($deductionsTotal - $caps['adjusted_deductions'], 2);
                 if ($delta > 0) {
                     $items[] = $this->makeItem(
-                        $slip, 'earning', 'manual', 'CAP-ADJ', 'ปรับ cap หักเงิน: ' . $caps['reason'],
-                        $delta, $order++,
+                        $slip, 'deduction', 'manual', 'CAP-ADJ', 'ปรับลดยอดหักเกิน cap: ' . $caps['reason'],
+                        -$delta, $order++,
                     );
                 }
                 $deductionsTotal = $caps['adjusted_deductions'];
@@ -268,7 +281,7 @@ class PayrollCalculationService
                 'gross_pay' => $grossPay,
                 'late_deduction' => $lateDeduction,
                 'absent_deduction' => $absentDeduction,
-                'other_deductions_total' => $componentDeductions + $ruleDeductions,
+                'other_deductions_total' => $componentDeductions + $ruleDeductions + $goodsDepositDeduction,
                 'ssf_employee' => $ssfEmp,
                 'ssf_employer' => $ssfEr,
                 'tax' => $tax,
@@ -301,6 +314,37 @@ class PayrollCalculationService
     }
 
     /* ---------------- helpers ---------------- */
+
+    /**
+     * ตัดยอดใบมัดจำของใช้ทั่วไปที่ยัง pending และ deposit_date อยู่ในงวดนี้ — เพิ่มเป็นรายการหักอัตโนมัติ
+     */
+    protected function applyGoodsDeposits(PayrollSlip $slip, Employee $employee, PayrollPeriod $period, array &$items, int &$order): float
+    {
+        $deposits = GoodsDepositSlip::where('employee_id', $employee->id)
+            ->where('status', GoodsDepositSlip::STATUS_PENDING)
+            ->whereBetween('deposit_date', [$period->start_date, $period->end_date])
+            ->orderBy('deposit_date')
+            ->get();
+
+        $total = 0.0;
+        foreach ($deposits as $d) {
+            $items[] = $this->makeItem(
+                $slip, 'deduction', 'manual', 'GOODS_DEPOSIT', "หักค่ามัดจำของใช้ทั่วไป ({$d->slip_no})",
+                (float) $d->total_amount, $order++,
+                referenceId: $d->id, referenceType: GoodsDepositSlip::class,
+            );
+            $total += (float) $d->total_amount;
+
+            $d->update([
+                'status' => GoodsDepositSlip::STATUS_DEDUCTED,
+                'payroll_period_id' => $period->id,
+                'payslip_id' => $slip->id,
+                'deducted_at' => now(),
+            ]);
+        }
+
+        return $total;
+    }
 
     protected function resolveActiveCompensation(Employee $employee, PayrollPeriod $period): ?EmployeeCompensation
     {

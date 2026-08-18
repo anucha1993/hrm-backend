@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\Payroll;
 
 use App\Exports\PayrollSlipsExport;
 use App\Http\Controllers\Controller;
+use App\Models\GoodsDepositSlip;
 use App\Models\PayrollSlip;
+use App\Models\PayrollSlipItem;
 use App\Services\Payroll\PayrollApprovalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -84,6 +86,13 @@ class PayrollSlipController extends Controller
         if (in_array($slip->status, ['approved', 'paid'])) {
             return response()->json(['message' => 'สลิปนี้ปิดแล้ว ลบไม่ได้'], 422);
         }
+        // คืนสถานะใบมัดจำของใช้ทั่วไปที่เคยตัดไว้ในสลิปนี้กลับเป็น pending ก่อนลบ
+        GoodsDepositSlip::where('payslip_id', $slip->id)->update([
+            'status' => GoodsDepositSlip::STATUS_PENDING,
+            'payroll_period_id' => null,
+            'payslip_id' => null,
+            'deducted_at' => null,
+        ]);
         $slip->items()->delete();
         $slip->delete();
         return response()->json(['message' => 'ลบเรียบร้อย']);
@@ -129,6 +138,43 @@ class PayrollSlipController extends Controller
     public function cancel(PayrollSlip $slip, Request $request): JsonResponse
     {
         return response()->json(['data' => $this->approvals->cancel($slip, $request->user()->id, $request->input('note'))]);
+    }
+
+    /**
+     * ลบรายการหักที่เพิ่มเอง หรือยกเลิกการตัดยอดใบมัดจำรายการเดียว (คืนสถานะใบมัดจำเป็น pending)
+     * DELETE /payroll/slips/{slip}/deductions/{item}
+     */
+    public function removeDeduction(PayrollSlip $slip, PayrollSlipItem $item): JsonResponse
+    {
+        if (! in_array($slip->status, ['draft', 'computed'])) {
+            return response()->json(['message' => 'สลิปนี้อยู่ในสถานะที่แก้ไขไม่ได้แล้ว'], 422);
+        }
+        if ($item->payroll_slip_id !== $slip->id) {
+            abort(404);
+        }
+        if ($item->type !== 'deduction' || $item->source !== 'manual' || $item->code === 'CAP-ADJ') {
+            return response()->json(['message' => 'ลบรายการนี้ไม่ได้ — แก้ไขได้เฉพาะรายการที่เพิ่ม/ตัดยอดเอง'], 422);
+        }
+
+        $amount = (float) $item->amount;
+
+        if ($item->reference_type === GoodsDepositSlip::class && $item->reference_id) {
+            GoodsDepositSlip::where('id', $item->reference_id)->update([
+                'status' => GoodsDepositSlip::STATUS_PENDING,
+                'payroll_period_id' => null,
+                'payslip_id' => null,
+                'deducted_at' => null,
+            ]);
+        }
+
+        $item->delete();
+
+        $slip->other_deductions_total = max(0, (float) $slip->other_deductions_total - $amount);
+        $slip->deductions_total       = max(0, (float) $slip->deductions_total - $amount);
+        $slip->net_pay                = (float) $slip->net_pay + $amount;
+        $slip->save();
+
+        return response()->json(['data' => $slip->fresh()->load('items')]);
     }
 
     /**

@@ -278,6 +278,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/payroll/slips/{slip}', [PayrollSlipController::class, 'destroy']);
         Route::post('/payroll/slips/{slip}/submit-l1', [PayrollSlipController::class, 'submitL1']);
         Route::post('/payroll/slips/{slip}/cancel', [PayrollSlipController::class, 'cancel']);
+        Route::delete('/payroll/slips/{slip}/deductions/{item}', [PayrollSlipController::class, 'removeDeduction']);
     });
 
     // Approve L1 (Manager)
