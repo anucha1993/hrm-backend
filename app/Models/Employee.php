@@ -106,6 +106,12 @@ class Employee extends Model
         return $this->hasMany(EmployeeDocument::class);
     }
 
+    /** เครือญาติที่เพิ่มไว้ในหน้าโปรไฟล์ของพนักงานคนนี้ (ผู้ติดต่อกรณีฉุกเฉินที่เป็นพนักงานในระบบด้วยกัน) */
+    public function relatives(): HasMany
+    {
+        return $this->hasMany(EmployeeRelative::class)->orderBy('id');
+    }
+
     public function shiftOverrides(): HasMany
     {
         return $this->hasMany(ShiftDayOverride::class);

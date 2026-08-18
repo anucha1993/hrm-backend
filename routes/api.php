@@ -97,6 +97,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:employees.update')->post('/employees/{employee}', [EmployeeController::class, 'update']); // POST + _method=PUT for multipart
     Route::middleware('permission:employees.update')->put('/employees/{employee}', [EmployeeController::class, 'update']);
     Route::middleware('permission:employees.delete')->delete('/employees/{employee}', [EmployeeController::class, 'destroy']);
+    Route::middleware('permission:employees.update')->post('/employees/{employee}/relatives', [EmployeeController::class, 'storeRelative']);
+    Route::middleware('permission:employees.update')->delete('/employees/{employee}/relatives/{relative}', [EmployeeController::class, 'destroyRelative']);
 
     // Labour API (proxy ไประบบ charoenmunconcrete.net)
     Route::middleware('permission:labours.view')->group(function () {

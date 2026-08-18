@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Country;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
+use App\Models\EmployeeRelative;
 use App\Models\EmploymentType;
 use App\Models\Role;
 use App\Models\User;
@@ -17,7 +18,7 @@ use Illuminate\Validation\Rule;
 
 class EmployeeController extends Controller
 {
-    private const RELATIONS = ['department', 'country', 'employmentType', 'documents', 'user'];
+    private const RELATIONS = ['department', 'country', 'employmentType', 'documents', 'user', 'relatives.relative:id,employee_code,first_name,last_name,nickname,phone,department_id'];
 
     public function index(Request $request): JsonResponse
     {
@@ -105,6 +106,41 @@ class EmployeeController extends Controller
     public function destroy(Employee $employee): JsonResponse
     {
         $employee->delete();
+        return response()->json(['message' => 'ลบเรียบร้อย']);
+    }
+
+    /** เพิ่มเครือญาติ (พนักงานอีกคนในระบบ) ให้พนักงานคนนี้ — เพิ่มได้ไม่จำกัดจำนวน */
+    public function storeRelative(Request $request, Employee $employee): JsonResponse
+    {
+        $data = $request->validate([
+            'relative_employee_id' => [
+                'required',
+                'integer',
+                Rule::exists('employees', 'id'),
+                Rule::unique('employee_relatives', 'relative_employee_id')->where('employee_id', $employee->id),
+            ],
+            'relation' => ['required', 'string', 'max:100'],
+            'note'     => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if ((int) $data['relative_employee_id'] === $employee->id) {
+            return response()->json(['message' => 'ไม่สามารถเลือกพนักงานคนเดียวกันเป็นเครือญาติของตัวเองได้'], 422);
+        }
+
+        $employee->relatives()->create($data);
+
+        return response()->json(['data' => $employee->load('relatives.relative:id,employee_code,first_name,last_name,nickname,phone,department_id')], 201);
+    }
+
+    /** ลบเครือญาติออกจากพนักงานคนนี้ */
+    public function destroyRelative(Employee $employee, EmployeeRelative $relative): JsonResponse
+    {
+        if ($relative->employee_id !== $employee->id) {
+            return response()->json(['message' => 'ไม่พบรายการนี้'], 404);
+        }
+
+        $relative->delete();
+
         return response()->json(['message' => 'ลบเรียบร้อย']);
     }
 
