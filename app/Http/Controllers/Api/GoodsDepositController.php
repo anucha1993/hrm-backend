@@ -126,7 +126,7 @@ class GoodsDepositController extends Controller
     }
 
     /**
-     * Preview ยอดที่จะหักของ payslip ใดๆ (รวมใบ pending ในช่วง period)
+     * Preview ยอดที่จะหักของ payslip ใดๆ (ใบ pending ในช่วง period + แจ้งใบนอกงวดที่ยังรอตัดแยกไว้ต่างหาก)
      * GET /api/goods-deposits/preview-for-payslip/{payslip}
      */
     public function previewForPayslip(PayrollSlip $payslip): JsonResponse
@@ -139,14 +139,28 @@ class GoodsDepositController extends Controller
             ->orderBy('deposit_date')
             ->get();
 
+        // ใบที่รอตัดแต่วันที่หยิบของอยู่นอกช่วงงวดนี้ — ไม่ตัดให้อัตโนมัติ ต้องให้ผู้ใช้เลือกตัดเองแบบ manual
+        $outOfPeriod = GoodsDepositSlip::with('items')
+            ->where('employee_id', $payslip->employee_id)
+            ->where('status', GoodsDepositSlip::STATUS_PENDING)
+            ->where(function ($w) use ($period) {
+                $w->where('deposit_date', '<', $period->start_date)
+                  ->orWhere('deposit_date', '>', $period->end_date);
+            })
+            ->orderBy('deposit_date')
+            ->get();
+
         return response()->json([
-            'data'  => $deposits,
-            'total' => (float) $deposits->sum('total_amount'),
+            'data'          => $deposits,
+            'total'         => (float) $deposits->sum('total_amount'),
+            'out_of_period' => $outOfPeriod,
+            'out_of_period_total' => (float) $outOfPeriod->sum('total_amount'),
         ]);
     }
 
     /**
      * ตัดยอดเข้า payslip — เพิ่มเป็น PayrollSlipItem type=deduction
+     * ใบในงวดถูกเลือกอัตโนมัติ ส่วนใบนอกงวดต้องระบุ deposit_ids มาเอง (manual)
      * POST /api/goods-deposits/apply-to-payslip/{payslip}
      */
     public function applyToPayslip(Request $request, PayrollSlip $payslip): JsonResponse
@@ -156,26 +170,42 @@ class GoodsDepositController extends Controller
         }
 
         $period = $payslip->period;
+        $manualIds = collect($request->input('deposit_ids', []))->map(fn ($v) => (int) $v)->filter()->all();
 
-        return DB::transaction(function () use ($payslip, $period, $request) {
-            $deposits = GoodsDepositSlip::with('items')
+        return DB::transaction(function () use ($payslip, $period, $manualIds) {
+            $auto = GoodsDepositSlip::with('items')
                 ->where('employee_id', $payslip->employee_id)
                 ->where('status', GoodsDepositSlip::STATUS_PENDING)
                 ->whereBetween('deposit_date', [$period->start_date, $period->end_date])
                 ->lockForUpdate()
                 ->get();
 
+            $manual = collect();
+            if (! empty($manualIds)) {
+                // ใบนอกงวดที่ผู้ใช้เลือกตัดยอดเองแบบ manual (ต้องเป็นของพนักงานคนนี้และยังรอตัดอยู่)
+                $manual = GoodsDepositSlip::with('items')
+                    ->whereIn('id', $manualIds)
+                    ->where('employee_id', $payslip->employee_id)
+                    ->where('status', GoodsDepositSlip::STATUS_PENDING)
+                    ->lockForUpdate()
+                    ->get();
+            }
+
+            $deposits = $auto->concat($manual)->unique('id')->values();
+
             if ($deposits->isEmpty()) {
                 return response()->json(['message' => 'ไม่มีใบมัดจำที่รอหักในงวดนี้', 'count' => 0, 'total' => 0]);
             }
 
-            // ลบรายการเก่าที่อ้างถึง goods deposit (กัน apply ซ้ำ)
-            PayrollSlipItem::where('payroll_slip_id', $payslip->id)
+            // เดิม query กรอง status=pending อยู่แล้ว จึงไม่มีใบเดิมที่ถูกตัดไปแล้วปนมาซ้ำ
+            // ไม่ลบรายการเก่าทั้งหมดแบบ blanket delete เพราะจะทำให้ใบที่ตัดยอดไปก่อนหน้ากลายเป็น
+            // สถานะ deducted แต่ไม่มีรายการหักอยู่ในสลิป (ยอดรวมไม่ตรง)
+            $order = 900 + PayrollSlipItem::where('payroll_slip_id', $payslip->id)
                 ->where('reference_type', GoodsDepositSlip::class)
-                ->delete();
+                ->count();
 
             $total = 0;
-            foreach ($deposits as $i => $d) {
+            foreach ($deposits as $d) {
                 PayrollSlipItem::create([
                     'payroll_slip_id' => $payslip->id,
                     'type'            => 'deduction',
@@ -185,7 +215,7 @@ class GoodsDepositController extends Controller
                     'amount'          => $d->total_amount,
                     'reference_id'    => $d->id,
                     'reference_type'  => GoodsDepositSlip::class,
-                    'order'           => 900 + $i,
+                    'order'           => $order++,
                 ]);
                 $total += (float) $d->total_amount;
 
