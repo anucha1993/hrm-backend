@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Task;
 use App\Models\TaskAssignee;
+use App\Models\TaskItem;
+use App\Models\TaskItemPhoto;
 use App\Models\Employee;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +20,8 @@ class TaskController extends Controller
     private const RELATIONS = [
         'assignees.employee:id,employee_code,title,first_name,last_name,nickname,avatar_path,department_id',
         'assignees.rater:id,name',
+        'items.completedBy:id,employee_code,first_name,last_name,nickname',
+        'items.photos.uploader:id,employee_code,first_name,last_name,nickname',
         'creator:id,name',
     ];
 
@@ -85,6 +89,12 @@ class TaskController extends Controller
                     'status'      => 'pending',
                 ]);
             }
+            foreach (array_values($data['items'] ?? []) as $i => $item) {
+                $task->items()->create([
+                    'title'      => $item['title'],
+                    'sort_order' => $i,
+                ]);
+            }
             return response()->json(['data' => $task->load(self::RELATIONS)], 201);
         });
     }
@@ -118,6 +128,24 @@ class TaskController extends Controller
                     $task->assignees()->create([
                         'employee_id' => $eid,
                         'status'      => 'pending',
+                    ]);
+                }
+            }
+
+            // sync งานย่อย: อัปเดตที่มี id เดิม, เพิ่มใหม่ที่ไม่มี id, ลบที่ไม่อยู่ใน list แล้ว
+            $incoming = array_values($data['items'] ?? []);
+            $keepIds = collect($incoming)->pluck('id')->filter()->all();
+            $task->items()->whereNotIn('id', $keepIds)->delete();
+            foreach ($incoming as $i => $item) {
+                if (!empty($item['id'])) {
+                    $task->items()->where('id', $item['id'])->update([
+                        'title'      => $item['title'],
+                        'sort_order' => $i,
+                    ]);
+                } else {
+                    $task->items()->create([
+                        'title'      => $item['title'],
+                        'sort_order' => $i,
                     ]);
                 }
             }
@@ -176,6 +204,72 @@ class TaskController extends Controller
     }
 
     /**
+     * อัปโหลดรูป before/after ของ "รายการงานย่อย" — อัปได้หลายรูปต่อครั้ง (ผู้รับงาน หรือ admin)
+     */
+    public function uploadItemPhoto(Request $request, Task $task, TaskItem $item): JsonResponse
+    {
+        if ($item->task_id !== $task->id) abort(404);
+
+        $user = $request->user();
+        $employeeId = optional($user->employee)->id;
+        $isAssignee = $employeeId && $task->assignees()->where('employee_id', $employeeId)->exists();
+        $isManager = $user->hasPermission('tasks.manage');
+        if (! $isAssignee && ! $isManager) {
+            abort(403, 'ไม่มีสิทธิ์อัปโหลดรูปงานย่อยนี้');
+        }
+
+        $data = $request->validate([
+            'kind'     => ['required', Rule::in(['before', 'after'])],
+            'photos'   => ['required', 'array', 'min:1'],
+            'photos.*' => ['image', 'max:8192'], // 8MB ต่อรูป
+        ]);
+
+        $created = [];
+        foreach ($data['photos'] as $file) {
+            $path = $file->store("tasks/{$task->id}/items/{$item->id}", 'public');
+            $created[] = $item->photos()->create([
+                'kind'        => $data['kind'],
+                'photo_path'  => $path,
+                'employee_id' => $employeeId,
+            ]);
+        }
+
+        // อัปรูป before ครั้งแรก → ถือว่าเริ่มงานแล้ว
+        if ($data['kind'] === 'before' && $isAssignee) {
+            $assignee = $task->assignees()->where('employee_id', $employeeId)->first();
+            if ($assignee && $assignee->status === 'pending') {
+                $assignee->status = 'in_progress';
+                $assignee->started_at = now();
+                $assignee->save();
+                $task->refreshStatusFromAssignees();
+            }
+        }
+
+        return response()->json(['data' => $item->fresh()->load('photos.uploader')], 201);
+    }
+
+    /**
+     * ลบรูปงานย่อย (เฉพาะคนอัปโหลดเอง หรือ admin)
+     */
+    public function deleteItemPhoto(Request $request, Task $task, TaskItem $item, TaskItemPhoto $photo): JsonResponse
+    {
+        if ($item->task_id !== $task->id || $photo->task_item_id !== $item->id) abort(404);
+
+        $user = $request->user();
+        $employeeId = optional($user->employee)->id;
+        $isOwner = $employeeId && $photo->employee_id === $employeeId;
+        $isManager = $user->hasPermission('tasks.manage');
+        if (! $isOwner && ! $isManager) {
+            abort(403, 'ไม่มีสิทธิ์ลบรูปนี้');
+        }
+
+        Storage::disk('public')->delete($photo->photo_path);
+        $photo->delete();
+
+        return response()->json(['message' => 'ลบรูปเรียบร้อย']);
+    }
+
+    /**
      * ส่งงาน (ต้องมีทั้ง before + after)
      */
     public function submit(Request $request, Task $task, TaskAssignee $assignee): JsonResponse
@@ -190,7 +284,19 @@ class TaskController extends Controller
             }
         }
 
-        if (! $assignee->before_photo_path || ! $assignee->after_photo_path) {
+        $items = $task->items;
+        if ($items->isNotEmpty()) {
+            $missing = $items->filter(function (TaskItem $it) {
+                return $it->photos()->where('kind', 'before')->doesntExist()
+                    || $it->photos()->where('kind', 'after')->doesntExist();
+            });
+            if ($missing->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'photo' => 'ทุกรายการงานย่อยต้องมีรูปก่อนทำและหลังทำอย่างน้อยอย่างละ 1 รูป ก่อนส่งงาน: '
+                        . $missing->pluck('title')->implode(', '),
+                ]);
+            }
+        } elseif (! $assignee->before_photo_path || ! $assignee->after_photo_path) {
             throw ValidationException::withMessages([
                 'photo' => 'ต้องอัปโหลดทั้งภาพก่อนทำ (before) และภาพหลังทำ (after) ก่อนส่งงาน',
             ]);
@@ -296,6 +402,35 @@ class TaskController extends Controller
         ]]);
     }
 
+    /**
+     * เช็ค/ยกเลิกเช็ค งานย่อย (ผู้รับงานคนใดคนหนึ่ง หรือ admin)
+     */
+    public function toggleItem(Request $request, Task $task, TaskItem $item): JsonResponse
+    {
+        if ($item->task_id !== $task->id) abort(404);
+
+        $user = $request->user();
+        $employeeId = optional($user->employee)->id;
+        $isAssignee = $employeeId && $task->assignees()->where('employee_id', $employeeId)->exists();
+        $isManager = $user->hasPermission('tasks.manage');
+        if (! $isAssignee && ! $isManager) {
+            abort(403, 'ไม่มีสิทธิ์แก้ไขงานย่อยนี้');
+        }
+
+        if ($item->is_completed) {
+            $item->is_completed = false;
+            $item->completed_at = null;
+            $item->completed_by = null;
+        } else {
+            $item->is_completed = true;
+            $item->completed_at = now();
+            $item->completed_by = $employeeId;
+        }
+        $item->save();
+
+        return response()->json(['data' => $item->fresh()->load('completedBy')]);
+    }
+
     private function validateData(Request $request, ?int $id = null): array
     {
         return $request->validate([
@@ -307,6 +442,9 @@ class TaskController extends Controller
             'note'          => ['nullable', 'string'],
             'employee_ids'   => ['required', 'array', 'min:1'],
             'employee_ids.*' => ['integer', 'exists:employees,id'],
+            'items'           => ['nullable', 'array'],
+            'items.*.id'      => ['nullable', 'integer'],
+            'items.*.title'   => ['required', 'string', 'max:255'],
         ]);
     }
 

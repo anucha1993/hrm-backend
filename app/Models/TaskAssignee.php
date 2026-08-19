@@ -44,14 +44,14 @@ class TaskAssignee extends Model
     public function getBeforePhotoUrlAttribute(): ?string
     {
         return $this->before_photo_path
-            ? \Illuminate\Support\Facades\Storage::url($this->before_photo_path)
+            ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->before_photo_path)
             : null;
     }
 
     public function getAfterPhotoUrlAttribute(): ?string
     {
         return $this->after_photo_path
-            ? \Illuminate\Support\Facades\Storage::url($this->after_photo_path)
+            ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->after_photo_path)
             : null;
     }
 }

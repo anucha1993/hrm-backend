@@ -42,6 +42,13 @@ class PayrollCalculationService
             $log['profile'] = $profile->only(['id', 'name', 'pay_frequency']);
             $log['base_salary'] = $baseSalary;
 
+            // พนักงานรายวัน: จ่ายเฉพาะวันที่มาทำงานจริง/ลาแบบได้ค่าจ้าง วันหยุดจะไม่ได้ค่าจ้าง
+            // และไม่ต้องมีรายการ "หักขาดงาน" ซ้ำ เพราะวันที่ขาดไม่ถูกนับรวมไว้ตั้งแต่แรก
+            // พนักงานรายเดือน (และประเภทอื่น): จ่ายเต็ม base_salary แล้วหักขาด/สายตามกฎของโปรไฟล์ตามเดิม
+            $employmentTypeCode = $employee->employmentType?->code;
+            $isDayBasedPay = $employmentTypeCode === 'DAILY';
+            $log['employment_type'] = $employmentTypeCode;
+
             // 2. คำนวณ rate ต่อ ชม. / ต่อวัน
             // ใช้จำนวนวันจริงของงวด (start_date..end_date) แทนค่าคงที่ใน profile
             // เพราะงวดจ่ายเงินของบริษัทนี้เป็นแบบ 2 ครั้ง/เดือน (ประมาณ 15-16 วัน/งวด)
@@ -110,10 +117,21 @@ class PayrollCalculationService
             $items = [];
             $order = 0;
 
-            // 7. base_pay (เต็มเดือนหรือคิดตามวันที่มาทำงาน?)
-            // นโยบาย: ใช้ base_salary เต็ม แล้วหัก absent/late แยกผ่านกฎและ profile
-            $basePay = $baseSalary;
-            $items[] = $this->makeItem($slip, 'earning', 'base', 'BASE', 'เงินเดือน', $basePay, $order++, taxable: true, ssf: true);
+            // 7. base_pay
+            // รายวัน: คิดเฉพาะวันที่มาทำงานจริง + ลาที่ได้ค่าจ้าง (วันหยุด/วันขาดงานไม่ได้ค่าจ้าง ไม่ใช่การ "หัก")
+            // รายเดือน/ประเภทอื่น: ใช้ base_salary เต็ม แล้วหัก absent/late แยกผ่านกฎและ profile
+            if ($isDayBasedPay) {
+                $paidDays = $att['present_days'] + $att['paid_leave_days'];
+                $basePay = round($dailyRate * $paidDays, 2);
+                $items[] = $this->makeItem(
+                    $slip, 'earning', 'base', 'BASE', 'เงินเดือน', $basePay, $order++, taxable: true, ssf: true,
+                    quantity: $paidDays, rate: $dailyRate,
+                    formula: "day_based: (present={$att['present_days']} + paid_leave={$att['paid_leave_days']}) × dailyRate",
+                );
+            } else {
+                $basePay = $baseSalary;
+                $items[] = $this->makeItem($slip, 'earning', 'base', 'BASE', 'เงินเดือน', $basePay, $order++, taxable: true, ssf: true);
+            }
 
             // 8. OT Pay
             $otPay = (float) $otAgg['amount'];
@@ -213,8 +231,8 @@ class PayrollCalculationService
                 );
             }
 
-            // 12. หักขาดงาน
-            $absentDeduction = $this->computeAbsentDeduction($profile, $att, $dailyRate);
+            // 12. หักขาดงาน (รายวันไม่ต้องหักซ้ำ เพราะวันขาดไม่ถูกนับรวมใน base_pay ตั้งแต่ข้อ 7 แล้ว)
+            $absentDeduction = $isDayBasedPay ? 0 : $this->computeAbsentDeduction($profile, $att, $dailyRate);
             if ($absentDeduction > 0) {
                 $items[] = $this->makeItem(
                     $slip, 'deduction', 'attendance', 'ABSENT', 'หักขาดงาน',

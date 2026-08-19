@@ -26,6 +26,11 @@ class Task extends Model
         return $this->hasMany(TaskAssignee::class)->orderBy('id');
     }
 
+    public function items(): HasMany
+    {
+        return $this->hasMany(TaskItem::class)->orderBy('sort_order');
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

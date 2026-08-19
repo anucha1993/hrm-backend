@@ -359,6 +359,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // ผู้รับงานอัปโหลดรูป + ส่งงาน
         Route::post('/tasks/{task}/assignees/{assignee}/photo', [TaskController::class, 'uploadPhoto']);
         Route::post('/tasks/{task}/assignees/{assignee}/submit', [TaskController::class, 'submit']);
+        Route::post('/tasks/{task}/items/{item}/toggle', [TaskController::class, 'toggleItem']);
+        Route::post('/tasks/{task}/items/{item}/photos', [TaskController::class, 'uploadItemPhoto']);
+        Route::delete('/tasks/{task}/items/{item}/photos/{photo}', [TaskController::class, 'deleteItemPhoto']);
     });
 
     // จัดการ (admin)

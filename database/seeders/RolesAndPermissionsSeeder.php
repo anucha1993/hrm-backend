@@ -148,12 +148,13 @@ class RolesAndPermissionsSeeder extends Seeder
             collect($memberPerms)->map(fn ($n) => $allPermissions[$n]->id)->all()
         );
 
-        // Employee: ลงเวลา + ยื่นลา + ดูสลิปตนเอง
+        // Employee: ลงเวลา + ยื่นลา + ดูสลิปตนเอง + ดูงานที่ได้รับมอบหมาย
         $employeePerms = [
             'attendance.checkin',
             'leave.request',
             'advance.request',
             'payroll.view',
+            'tasks.view',
         ];
         $employee->permissions()->sync(
             collect($employeePerms)->map(fn ($n) => $allPermissions[$n]->id)->all()
