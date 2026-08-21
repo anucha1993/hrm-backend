@@ -55,7 +55,9 @@ class PayrollCalculationService
             // ไม่ใช่เดือนเต็ม (26 วัน) — ใช้ช่วงวันที่ของงวดที่มีอยู่แล้วแทนการฮาร์ดโค้ด
             $workingDays = max(1, (int) $period->start_date->diffInDays($period->end_date) + 1);
             $workingHours = max(1, (int) $profile->working_hours_per_day);
-            $dailyRate = round($baseSalary / $workingDays, 2);
+            // รายวัน: base_salary คืออัตราค่าจ้างต่อวันจริงอยู่แล้ว (ไม่ใช่ยอดรวมทั้งงวด)
+            // ห้ามหารด้วย workingDays ซ้ำ เพราะจำนวนวันของแต่ละงวดไม่คงที่ (15-16 วัน) จะทำให้อัตราคลาดเคลื่อน
+            $dailyRate = $isDayBasedPay ? $baseSalary : round($baseSalary / $workingDays, 2);
             $hourlyRate = $employeeComp->hourly_rate_override
                 ? (float) $employeeComp->hourly_rate_override
                 : round($dailyRate / $workingHours, 2);
