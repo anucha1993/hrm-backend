@@ -471,6 +471,7 @@ class AttendanceController extends Controller
         $shiftId  = $data['work_shift_id'] ?? null;
 
         $createdIds = [];
+        $updatedIds = [];
         $skipped = [];
 
         foreach ($data['days'] as $day) {
@@ -479,13 +480,20 @@ class AttendanceController extends Controller
                     continue;
                 }
 
-                $checkedAt = Carbon::parse($day['date'] . ' ' . $day[$type], self::TZ)->utc();
+                $checkedAt   = Carbon::parse($day['date'] . ' ' . $day[$type], self::TZ)->utc();
+                $dayStartUtc = Carbon::parse($day['date'], self::TZ)->startOfDay()->utc();
+                $dayEndUtc   = Carbon::parse($day['date'], self::TZ)->endOfDay()->utc();
 
-                $exists = Attendance::where('employee_id', $employee->id)
+                // หา record ของ type เดียวกันในวัน (Bangkok) เดียวกัน — ถ้ามีให้ "แก้ไข" แทนการสร้างซ้ำ
+                $existingSameDay = Attendance::where('employee_id', $employee->id)
                     ->where('type', $type)
-                    ->whereBetween('checked_at', [$checkedAt->copy()->subMinute(), $checkedAt->copy()->addMinute()])
-                    ->exists();
-                if ($exists) {
+                    ->whereBetween('checked_at', [$dayStartUtc, $dayEndUtc])
+                    ->orderBy('id')
+                    ->get();
+
+                $existing = $existingSameDay->first();
+
+                if ($existing && abs($existing->checked_at->getTimestamp() - $checkedAt->getTimestamp()) <= 60) {
                     $skipped[] = ['date' => $day['date'], 'type' => $type, 'reason' => 'มีบันทึกเวลาในช่วงเวลาเดียวกันอยู่แล้ว'];
                     continue;
                 }
@@ -518,36 +526,91 @@ class AttendanceController extends Controller
                     $status = 'overtime';
                 }
 
-                $attendance = Attendance::create([
-                    'employee_id'        => $employee->id,
-                    'type'               => $type,
-                    'checked_at'         => $checkedAt,
-                    'office_location_id' => $data['office_location_id'] ?? null,
-                    'work_shift_id'      => $shift?->id,
-                    'status'             => $status,
-                    'late_minutes'       => $lateMinutes,
-                    'note'               => $day['note'] ?? null,
-                    'source'             => 'manual',
-                    'is_edited'          => true,
-                    'edited_by'          => Auth::id(),
-                    'edited_at'          => now(),
-                    'edit_reason'        => $data['reason'],
-                ]);
-
-                AttendanceAuditLog::create([
-                    'attendance_id' => $attendance->id,
-                    'employee_id'   => $employee->id,
-                    'action'        => 'create',
-                    'old_values'    => null,
-                    'new_values'    => $attendance->only([
+                if ($existing) {
+                    // แก้ไข record เดิม + ลบตัวซ้ำที่อาจเกิดจากการกดบันทึกซ้ำในอดีต
+                    $oldValues = $existing->only([
                         'type', 'checked_at', 'status', 'late_minutes',
                         'work_shift_id', 'office_location_id', 'note',
-                    ]),
-                    'reason'        => $data['reason'],
-                    'user_id'       => Auth::id(),
-                ]);
+                    ]);
 
-                $createdIds[] = $attendance->id;
+                    $existing->fill([
+                        'checked_at'         => $checkedAt,
+                        'office_location_id' => $data['office_location_id'] ?? $existing->office_location_id,
+                        'work_shift_id'      => $shift?->id ?? $existing->work_shift_id,
+                        'status'             => $status,
+                        'late_minutes'       => $lateMinutes,
+                        'note'               => array_key_exists('note', $day) ? $day['note'] : $existing->note,
+                        'source'             => 'manual',
+                        'is_edited'          => true,
+                        'edited_by'          => Auth::id(),
+                        'edited_at'          => now(),
+                        'edit_reason'        => $data['reason'],
+                    ]);
+                    $existing->save();
+
+                    AttendanceAuditLog::create([
+                        'attendance_id' => $existing->id,
+                        'employee_id'   => $employee->id,
+                        'action'        => 'update',
+                        'old_values'    => $oldValues,
+                        'new_values'    => $existing->only([
+                            'type', 'checked_at', 'status', 'late_minutes',
+                            'work_shift_id', 'office_location_id', 'note',
+                        ]),
+                        'reason'        => $data['reason'],
+                        'user_id'       => Auth::id(),
+                    ]);
+
+                    // ลบ duplicate อื่นๆ ของ day/type เดียวกัน (ถ้ามี) — สร้างจากบั๊กเดิมของฟีเจอร์นี้
+                    foreach ($existingSameDay->slice(1) as $dup) {
+                        AttendanceAuditLog::create([
+                            'attendance_id' => $dup->id,
+                            'employee_id'   => $employee->id,
+                            'action'        => 'delete',
+                            'old_values'    => $dup->only([
+                                'type', 'checked_at', 'status', 'late_minutes',
+                                'work_shift_id', 'office_location_id', 'note',
+                            ]),
+                            'new_values'    => null,
+                            'reason'        => $data['reason'] . ' (ลบรายการซ้ำของวันเดียวกัน)',
+                            'user_id'       => Auth::id(),
+                        ]);
+                        $dup->delete();
+                    }
+
+                    $updatedIds[] = $existing->id;
+                } else {
+                    $attendance = Attendance::create([
+                        'employee_id'        => $employee->id,
+                        'type'               => $type,
+                        'checked_at'         => $checkedAt,
+                        'office_location_id' => $data['office_location_id'] ?? null,
+                        'work_shift_id'      => $shift?->id,
+                        'status'             => $status,
+                        'late_minutes'       => $lateMinutes,
+                        'note'               => $day['note'] ?? null,
+                        'source'             => 'manual',
+                        'is_edited'          => true,
+                        'edited_by'          => Auth::id(),
+                        'edited_at'          => now(),
+                        'edit_reason'        => $data['reason'],
+                    ]);
+
+                    AttendanceAuditLog::create([
+                        'attendance_id' => $attendance->id,
+                        'employee_id'   => $employee->id,
+                        'action'        => 'create',
+                        'old_values'    => null,
+                        'new_values'    => $attendance->only([
+                            'type', 'checked_at', 'status', 'late_minutes',
+                            'work_shift_id', 'office_location_id', 'note',
+                        ]),
+                        'reason'        => $data['reason'],
+                        'user_id'       => Auth::id(),
+                    ]);
+
+                    $createdIds[] = $attendance->id;
+                }
             }
         }
 
@@ -555,6 +618,7 @@ class AttendanceController extends Controller
             'message' => 'เพิ่มเวลาย้อนหลังหลายวันเรียบร้อย',
             'summary' => [
                 'created' => count($createdIds),
+                'updated' => count($updatedIds),
                 'skipped' => count($skipped),
                 'days'    => count($data['days']),
             ],
