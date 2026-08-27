@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
+use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmploymentType;
 use App\Models\HipTimeSyncLog;
@@ -47,11 +48,12 @@ class HipTimeIngestController extends Controller
         ]);
 
         $employeesByEnroll = Employee::whereNotNull('hip_enroll_number')
-            ->select('id', 'hip_enroll_number', 'employment_type_id')
+            ->select('id', 'hip_enroll_number', 'employment_type_id', 'department_id')
             ->get()
             ->keyBy(fn (Employee $e) => trim((string) $e->hip_enroll_number));
 
         $pieceId = EmploymentType::where('code', 'PIECEWORK')->value('id');
+        $noTrackDeptIds = Department::where('attendance_mode', Department::ATTENDANCE_NONE)->pluck('id')->all();
 
         $created = 0;
         $skipped = 0;
@@ -80,6 +82,12 @@ class HipTimeIngestController extends Controller
             }
 
             if ($pieceId !== null && (int) $employee->employment_type_id === (int) $pieceId) {
+                $skipped++;
+                continue;
+            }
+
+            if (in_array((int) $employee->department_id, $noTrackDeptIds, true)) {
+                // แผนกงานเหมา — ไม่บันทึกเวลาจากเครื่องสแกน
                 $skipped++;
                 continue;
             }

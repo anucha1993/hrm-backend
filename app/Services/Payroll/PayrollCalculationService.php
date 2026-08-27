@@ -395,6 +395,10 @@ class PayrollCalculationService
         $leaveDays = (float) $leaveSummary['total_days'];
         $unpaidLeaveDays = (float) $leaveSummary['unpaid_days'];
 
+        // แผนกงานเหมา (attendance_mode = none) — ไม่บันทึกเวลา ไม่นับขาด/ไม่ตัดสิทธิ์เบี้ยขยันจากการไม่มาสแกน
+        $isNoTrack = $employee->department
+            && $employee->department->attendance_mode === \App\Models\Department::ATTENDANCE_NONE;
+
         // วันหยุดบริษัท/โปรไฟล์ (Holiday model) + วันหยุดตามตารางงานของพนักงานคนนี้เอง
         // (แจ้งวันหยุดรายวัน / วันพักตามรอบหมุนเวียน / ไม่ตรง work_days ของกะ) — ไม่นับเป็นวันขาด
         $schedule = app(\App\Services\WorkScheduleService::class);
@@ -416,17 +420,17 @@ class PayrollCalculationService
         $expectedWorkDays = max(0, $totalDays - $holidayDates->count() - $scheduleOffDates->count());
 
         // ขาดจริง = วันที่ต้องทำงานตามตารางแต่ไม่มา และไม่ได้ลา
-        $absentDays = max(0, $expectedWorkDays - $presentDays - $leaveDays);
+        $absentDays = $isNoTrack ? 0 : max(0, $expectedWorkDays - $presentDays - $leaveDays);
         $lateRows = $rows->filter(fn ($r) => ($r->late_minutes ?? 0) > 0 || $r->status === 'late');
         $lateCount = $lateRows->groupBy(fn ($r) => $r->checked_at->toDateString())->count();
         $lateMinutesTotal = (int) $rows->sum('late_minutes');
 
         // วันหยุดบริษัทในรอบที่พนักงานไม่มาลงเวลาเลย (ใช้เป็นเหตุ "เสียสิทธิ์" เบี้ยขยันได้ ถ้าตั้งค่าไว้)
-        $holidayAbsentCount = $holidayDates->filter(fn ($d) => ! $byDay->has($d))->count();
+        $holidayAbsentCount = $isNoTrack ? 0 : $holidayDates->filter(fn ($d) => ! $byDay->has($d))->count();
 
         return [
             'present_days' => $presentDays,
-            'absent_days' => $absentDays + $unpaidLeaveDays, // unpaid leave ถือเสมือนขาดสำหรับหักเงิน
+            'absent_days' => $isNoTrack ? 0 : ($absentDays + $unpaidLeaveDays), // unpaid leave ถือเสมือนขาดสำหรับหักเงิน (ยกเว้นแผนกงานเหมา)
             'leave_days' => $leaveDays,
             'paid_leave_days' => (float) $leaveSummary['paid_days'],
             'unpaid_leave_days' => $unpaidLeaveDays,

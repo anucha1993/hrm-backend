@@ -174,16 +174,19 @@ class ReportController extends Controller
             $lateRows = $checkIns->filter(fn ($r) => $r->status === 'late' || ($r->late_minutes ?? 0) > 0);
             $lateDays = $lateRows->groupBy(fn ($r) => $r->checked_at->toDateString())->count();
             $lateMinutes = (int) $checkIns->sum('late_minutes');
+            $mode = $emp->department?->attendance_mode ?? \App\Models\Department::ATTENDANCE_FULL;
+            $isNoTrack = $mode === \App\Models\Department::ATTENDANCE_NONE;
             return [
                 'employee_id'     => $emp->id,
                 'employee_code'   => $emp->employee_code,
                 'employee_name'   => trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')),
                 'department'      => optional($emp->department)->name,
+                'no_track'        => $isNoTrack,
                 'present_days'    => $presentDays,
-                'absent_days'     => max(0, $totalDays - $presentDays),
+                'absent_days'     => $isNoTrack ? 0 : max(0, $totalDays - $presentDays),
                 'late_days'       => $lateDays,
                 'late_minutes'    => $lateMinutes,
-                'attendance_rate' => $totalDays > 0 ? round($presentDays / $totalDays * 100, 2) : 0,
+                'attendance_rate' => $isNoTrack ? 100 : ($totalDays > 0 ? round($presentDays / $totalDays * 100, 2) : 0),
             ];
         })->sortBy('employee_code')->values();
 

@@ -6,6 +6,7 @@ use App\Exports\AttendanceImportTemplateExport;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
+use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmploymentType;
 use App\Models\WorkShift;
@@ -55,11 +56,12 @@ class AttendanceImportController extends Controller
         $dataRows = array_slice($rows, 1);
 
         // map employee_code (พิมพ์ใหญ่) → Employee
-        $employees = Employee::select('id', 'employee_code', 'employment_type_id')
+        $employees = Employee::select('id', 'employee_code', 'employment_type_id', 'department_id')
             ->get()
             ->keyBy(fn ($e) => mb_strtoupper(trim((string) $e->employee_code)));
 
         $pieceId = EmploymentType::where('code', 'PIECEWORK')->value('id');
+        $noTrackDeptIds = Department::where('attendance_mode', Department::ATTENDANCE_NONE)->pluck('id')->all();
 
         $userId = Auth::id();
         $created = 0;
@@ -100,6 +102,13 @@ class AttendanceImportController extends Controller
             // ข้ามพนักงานจ้างตามชิ้นงาน (งานเหมา) — ไม่เก็บเวลา คิดค่าจ้างตามการผลิต
             if ($employee && $pieceId !== null && (int) $employee->employment_type_id === (int) $pieceId) {
                 $errors[] = ['row' => $rowNum, 'code' => (string) ($code ?? ''), 'errors' => ['ข้าม: พนักงานจ้างตามชิ้นงาน (งานเหมา) ไม่เก็บเวลา']];
+                $skipped++;
+                continue;
+            }
+
+            // ข้ามแผนกที่ตั้งค่าเป็น "ไม่บันทึกเวลา" (งานเหมาระดับแผนก)
+            if ($employee && in_array((int) $employee->department_id, $noTrackDeptIds, true)) {
+                $errors[] = ['row' => $rowNum, 'code' => (string) ($code ?? ''), 'errors' => ['ข้าม: แผนกงานเหมา ไม่บันทึกเวลา']];
                 $skipped++;
                 continue;
             }

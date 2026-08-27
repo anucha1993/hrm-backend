@@ -78,7 +78,7 @@ class AttendanceSummaryController extends Controller
             $emp->where('id', $myEmpId ?? -1);
         }
 
-        $employees = $emp->with('department:id,name')->orderBy('employee_code')->get();
+        $employees = $emp->with('department:id,name,attendance_mode')->orderBy('employee_code')->get();
         $totalDays = CarbonPeriod::create($start, $end)->count();
 
         $rows = $employees->map(function ($e) use ($start, $end, $totalDays) {
@@ -93,7 +93,11 @@ class AttendanceSummaryController extends Controller
 
             $leave = $this->leave->summarizeForPeriod($e->id, $start->toDateString(), $end->toDateString());
             $leaveDays = (float) $leave['total_days'];
-            $absentDays = max(0, $totalDays - $presentDays - $leaveDays);
+            $mode = $e->department?->attendance_mode ?? \App\Models\Department::ATTENDANCE_FULL;
+            // งานเหมา — ไม่บันทึกเวลา จึงไม่ถือว่าขาดงาน
+            $absentDays = $mode === \App\Models\Department::ATTENDANCE_NONE
+                ? 0
+                : max(0, $totalDays - $presentDays - $leaveDays);
 
             $otHours = (float) OtSessionEmployee::where('employee_id', $e->id)
                 ->whereHas('session', fn ($q) => $q->whereBetween('ot_date', [$start->toDateString(), $end->toDateString()]))

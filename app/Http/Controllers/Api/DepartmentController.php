@@ -22,10 +22,11 @@ class DepartmentController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'code'        => ['required', 'string', 'max:50', 'unique:departments,code'],
-            'name'        => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'is_active'   => ['boolean'],
+            'code'            => ['required', 'string', 'max:50', 'unique:departments,code'],
+            'name'            => ['required', 'string', 'max:255'],
+            'description'     => ['nullable', 'string'],
+            'attendance_mode' => ['nullable', Rule::in(Department::ATTENDANCE_MODES)],
+            'is_active'       => ['boolean'],
         ]);
         return response()->json(['data' => Department::create($data)], 201);
     }
@@ -38,10 +39,11 @@ class DepartmentController extends Controller
     public function update(Request $request, Department $department): JsonResponse
     {
         $data = $request->validate([
-            'code'        => ['sometimes', 'string', 'max:50', Rule::unique('departments', 'code')->ignore($department->id)],
-            'name'        => ['sometimes', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'is_active'   => ['boolean'],
+            'code'            => ['sometimes', 'string', 'max:50', Rule::unique('departments', 'code')->ignore($department->id)],
+            'name'            => ['sometimes', 'string', 'max:255'],
+            'description'     => ['nullable', 'string'],
+            'attendance_mode' => ['sometimes', Rule::in(Department::ATTENDANCE_MODES)],
+            'is_active'       => ['boolean'],
         ]);
         $department->update($data);
         return response()->json(['data' => $department]);

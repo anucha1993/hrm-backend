@@ -242,7 +242,7 @@ class AttendanceController extends Controller
             ->where('status', Employee::STATUS_ACTIVE)
             ->when($request->integer('department_id'), fn ($q, $v) => $q->where('department_id', $v))
             ->when($request->integer('employee_id'), fn ($q, $v) => $q->where('id', $v))
-            ->with('department:id,code,name')
+            ->with('department:id,code,name,attendance_mode')
             ->orderBy('employee_code')
             ->get();
 
@@ -304,8 +304,12 @@ class AttendanceController extends Controller
 
             $shift = $this->schedule->resolveShift($employee, $date);
             $isHoliday = $this->schedule->isHoliday($employee, $date);
+            $mode = $employee->department?->attendance_mode ?? \App\Models\Department::ATTENDANCE_FULL;
 
-            if ($leave) {
+            if ($mode === \App\Models\Department::ATTENDANCE_NONE) {
+                // งานเหมา — ไม่บันทึกเวลา, ไม่ถือว่าขาดงาน
+                $dayStatus = 'no_track';
+            } elseif ($leave) {
                 $dayStatus = 'leave';
             } elseif ($isHoliday) {
                 $dayStatus = 'holiday';
@@ -313,6 +317,9 @@ class AttendanceController extends Controller
                 $dayStatus = 'day_off';
             } elseif ($checkIn) {
                 $dayStatus = $checkIn->status ?? 'normal';
+            } elseif ($mode === \App\Models\Department::ATTENDANCE_CHECK_IN_ONLY) {
+                // แผนกสแกนเข้าอย่างเดียว — ไม่มี checkIn เท่านั้นจึงจะถือว่าขาด
+                $dayStatus = $dateStr <= Carbon::today(self::TZ)->toDateString() ? 'absent' : 'upcoming';
             } elseif ($checkOut) {
                 $dayStatus = $checkOut->status ?? 'normal';
             } elseif ($dateStr <= Carbon::today(self::TZ)->toDateString()) {
