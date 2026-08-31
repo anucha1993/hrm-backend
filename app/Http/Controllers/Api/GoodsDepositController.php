@@ -63,6 +63,7 @@ class GoodsDepositController extends Controller
                 'status'        => GoodsDepositSlip::STATUS_PENDING,
                 'note'          => $data['note'] ?? null,
                 'created_by'    => $request->user()?->id,
+                'source'        => GoodsDepositSlip::SOURCE_MANUAL,
                 'total_amount'  => 0,
             ]);
 
@@ -103,6 +104,7 @@ class GoodsDepositController extends Controller
                 'status'       => GoodsDepositSlip::STATUS_PENDING,
                 'note'         => $data['note'] ?? null,
                 'created_by'   => null,
+                'source'       => GoodsDepositSlip::SOURCE_LABOUR_API,
                 'total_amount' => 0,
             ]);
 

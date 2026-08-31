@@ -16,10 +16,13 @@ class GoodsDepositSlip extends Model
     public const STATUS_CANCELLED = 'cancelled';
     public const STATUS_WAIVED    = 'waived';
 
+    public const SOURCE_MANUAL    = 'manual';
+    public const SOURCE_LABOUR_API = 'labour_api';
+
     protected $fillable = [
         'slip_no', 'employee_id', 'deposit_date', 'total_amount',
         'status', 'payroll_period_id', 'payslip_id', 'deducted_at',
-        'created_by', 'note',
+        'created_by', 'note', 'source',
     ];
 
     protected $casts = [
