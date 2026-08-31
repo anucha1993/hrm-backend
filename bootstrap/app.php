@@ -15,9 +15,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // ใช้ Bearer token mode ไม่ใช่ SPA stateful → ไม่ต้องเปิด statefulApi()
         // $middleware->statefulApi();
         $middleware->alias([
-            'permission'    => \App\Http\Middleware\CheckPermission::class,
-            'role'          => \App\Http\Middleware\CheckRole::class,
-            'hiptime.token' => \App\Http\Middleware\VerifyHipTimeToken::class,
+            'permission'            => \App\Http\Middleware\CheckPermission::class,
+            'role'                  => \App\Http\Middleware\CheckRole::class,
+            'hiptime.token'         => \App\Http\Middleware\VerifyHipTimeToken::class,
+            'labour_importer.token' => \App\Http\Middleware\VerifyLabourImporterToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

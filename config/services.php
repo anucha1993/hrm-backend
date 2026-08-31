@@ -44,6 +44,11 @@ return [
         'checkout_types' => array_values(array_filter(array_map('trim', explode(',', (string) env('HIPTIME_CHECKOUT_TYPES', 'OUT'))), fn ($v) => $v !== '')),
     ],
 
+    'labour_importer' => [
+        // token ที่ labour-app-importer ส่งมาใน header X-Labour-Importer-Token เพื่อสร้างใบมัดจำอัตโนมัติเมื่อชำระเงินครบ (machine-to-machine)
+        'token' => env('LABOUR_IMPORTER_TOKEN'),
+    ],
+
     'labour' => [
         'base_url' => env('LABOUR_API_BASE_URL', 'https://charoenmunconcrete.net'),
         'key'      => env('LABOUR_API_KEY'),

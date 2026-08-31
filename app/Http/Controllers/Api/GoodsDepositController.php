@@ -72,6 +72,46 @@ class GoodsDepositController extends Controller
         });
     }
 
+    /**
+     * รับข้อมูลจาก labour-app-importer เมื่อรายการหักชำระเงินครบ (machine-to-machine, token auth)
+     * POST /api/labour/goods-deposits
+     */
+    public function storeFromLabour(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'labour_id'          => ['required', 'integer'],
+            'deposit_date'       => ['required', 'date'],
+            'note'               => ['nullable', 'string'],
+            'items'              => ['required', 'array', 'min:1'],
+            'items.*.item_name'  => ['required', 'string', 'max:255'],
+            'items.*.qty'        => ['required', 'numeric', 'min:0.01'],
+            'items.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'items.*.note'       => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $employee = Employee::where('labour_id', $data['labour_id'])->first();
+        if (! $employee) {
+            return response()->json(['message' => "ไม่พบพนักงานที่เชื่อมกับ labour_id={$data['labour_id']} ในระบบ HRM"], 422);
+        }
+
+        return DB::transaction(function () use ($data, $employee) {
+            $depositDate = Carbon::parse($data['deposit_date']);
+            $slip = GoodsDepositSlip::create([
+                'slip_no'      => GoodsDepositSlip::generateSlipNo($depositDate),
+                'employee_id'  => $employee->id,
+                'deposit_date' => $data['deposit_date'],
+                'status'       => GoodsDepositSlip::STATUS_PENDING,
+                'note'         => $data['note'] ?? null,
+                'created_by'   => null,
+                'total_amount' => 0,
+            ]);
+
+            $this->syncItems($slip, $data['items']);
+
+            return response()->json(['data' => $slip->load(self::RELATIONS)], 201);
+        });
+    }
+
     public function update(Request $request, GoodsDepositSlip $deposit): JsonResponse
     {
         if ($deposit->status === GoodsDepositSlip::STATUS_DEDUCTED) {
