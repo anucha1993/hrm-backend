@@ -144,6 +144,12 @@ class ReportController extends Controller
             ->whereBetween('checked_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
             ->get();
 
+        // วันลาที่อนุมัติแล้วในช่วงนี้ (ใช้ตัด "ขาดงาน" ออก เหมือนหน้า /attendance/summary)
+        $leaveService = app(\App\Services\Leave\LeaveService::class);
+        $leaveSummaries = $employeeIds->mapWithKeys(
+            fn ($id) => [$id => $leaveService->summarizeForPeriod($id, $from->toDateString(), $to->toDateString())]
+        );
+
         $totalDays = (int) round($from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay())) + 1;
         $totalLate = $rows->filter(fn ($r) => $r->status === 'late' || ($r->late_minutes ?? 0) > 0)
             ->groupBy(fn ($r) => $r->employee_id . '|' . $r->checked_at->toDateString())->count();
@@ -167,7 +173,7 @@ class ReportController extends Controller
 
         // Per-employee — full roster
         $rowsByEmp = $rows->groupBy('employee_id');
-        $byEmployee = $employees->map(function ($emp) use ($rowsByEmp, $totalDays) {
+        $byEmployee = $employees->map(function ($emp) use ($rowsByEmp, $totalDays, $leaveSummaries) {
             $g = $rowsByEmp->get($emp->id, collect());
             $checkIns = $g->where('type', 'check_in');
             $presentDays = $checkIns->groupBy(fn ($r) => $r->checked_at->toDateString())->count();
@@ -176,6 +182,10 @@ class ReportController extends Controller
             $lateMinutes = (int) $checkIns->sum('late_minutes');
             $mode = $emp->department?->attendance_mode ?? \App\Models\Department::ATTENDANCE_FULL;
             $isNoTrack = $mode === \App\Models\Department::ATTENDANCE_NONE;
+            $leave = $leaveSummaries->get($emp->id);
+            $leaveDays = (float) ($leave['total_days'] ?? 0);
+            $absentDays = $isNoTrack ? 0 : max(0, $totalDays - $presentDays - $leaveDays);
+            $expectedDays = max(1, $totalDays - $leaveDays);
             return [
                 'employee_id'     => $emp->id,
                 'employee_code'   => $emp->employee_code,
@@ -183,10 +193,11 @@ class ReportController extends Controller
                 'department'      => optional($emp->department)->name,
                 'no_track'        => $isNoTrack,
                 'present_days'    => $presentDays,
-                'absent_days'     => $isNoTrack ? 0 : max(0, $totalDays - $presentDays),
+                'leave_days'      => $leaveDays,
+                'absent_days'     => $absentDays,
                 'late_days'       => $lateDays,
                 'late_minutes'    => $lateMinutes,
-                'attendance_rate' => $isNoTrack ? 100 : ($totalDays > 0 ? round($presentDays / $totalDays * 100, 2) : 0),
+                'attendance_rate' => $isNoTrack ? 100 : round($presentDays / $expectedDays * 100, 2),
             ];
         })->sortBy('employee_code')->values();
 
@@ -197,6 +208,7 @@ class ReportController extends Controller
                     'employees'    => $employees->count(),
                     'present_days' => $rows->where('type', 'check_in')
                         ->groupBy(fn ($r) => $r->employee_id . '|' . $r->checked_at->toDateString())->count(),
+                    'leave_days'   => round($leaveSummaries->sum(fn ($l) => (float) ($l['total_days'] ?? 0)), 2),
                     'late_days'    => $totalLate,
                     'late_minutes' => $totalLateMinutes,
                 ],

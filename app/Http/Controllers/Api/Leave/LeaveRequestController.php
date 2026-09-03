@@ -109,7 +109,8 @@ class LeaveRequestController extends Controller
             abort_if(! $data['employee_id'], 422, 'บัญชีนี้ไม่ผูกกับพนักงาน');
         }
 
-        $req = $this->service->create($data, $user->id);
+        // HR/admin ยื่นแทนพนักงานได้โดยไม่ติดเงื่อนไข "ต้องแจ้งล่วงหน้า X วัน"
+        $req = $this->service->create($data, $user->id, $user->hasPermission('leave.config'));
         return response()->json(['data' => $req], 201);
     }
 

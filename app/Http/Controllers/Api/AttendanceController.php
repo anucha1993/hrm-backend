@@ -389,6 +389,17 @@ class AttendanceController extends Controller
         $checkedAt = Carbon::parse($data['checked_at']);
         $employee  = Employee::findOrFail($data['employee_id']);
 
+        $workDate = $checkedAt->copy()->setTimezone(self::TZ)->toDateString();
+        $leave = LeaveRequest::where('employee_id', $employee->id)
+            ->where('status', LeaveRequest::STATUS_APPROVED)
+            ->where('is_half_day', false)
+            ->whereDate('start_date', '<=', $workDate)
+            ->whereDate('end_date', '>=', $workDate)
+            ->exists();
+        if ($leave) {
+            return response()->json(['message' => 'วันนี้มีการลาที่อนุมัติแล้ว ไม่สามารถเพิ่มเวลาเข้า-ออกงานได้'], 422);
+        }
+
         $exists = Attendance::where('employee_id', $employee->id)
             ->where('type', $data['type'])
             ->whereBetween('checked_at', [$checkedAt->copy()->subMinute(), $checkedAt->copy()->addMinute()])
@@ -477,11 +488,27 @@ class AttendanceController extends Controller
         $employee = Employee::findOrFail($data['employee_id']);
         $shiftId  = $data['work_shift_id'] ?? null;
 
+        // วันที่ลาแบบเต็มวัน (อนุมัติแล้ว) ในช่วงที่ส่งมา — ห้ามเพิ่มเวลาเข้า-ออกงานทับ
+        $dates = collect($data['days'])->pluck('date');
+        $fullDayLeaveDates = LeaveRequest::where('employee_id', $employee->id)
+            ->where('status', LeaveRequest::STATUS_APPROVED)
+            ->where('is_half_day', false)
+            ->where('start_date', '<=', $dates->max())
+            ->where('end_date', '>=', $dates->min())
+            ->get(['start_date', 'end_date'])
+            ->flatMap(fn ($l) => \Carbon\CarbonPeriod::create($l->start_date, $l->end_date)->toArray())
+            ->map(fn ($d) => $d->toDateString())
+            ->flip();
+
         $createdIds = [];
         $updatedIds = [];
         $skipped = [];
 
         foreach ($data['days'] as $day) {
+            if ($fullDayLeaveDates->has($day['date'])) {
+                $skipped[] = ['date' => $day['date'], 'type' => 'check_in/check_out', 'reason' => 'วันนี้มีการลาที่อนุมัติแล้ว ไม่สามารถเพิ่มเวลาเข้า-ออกงานได้'];
+                continue;
+            }
             foreach (['check_in', 'check_out'] as $type) {
                 if (empty($day[$type])) {
                     continue;

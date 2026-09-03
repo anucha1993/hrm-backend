@@ -31,10 +31,11 @@ class LeaveService
 
     /**
      * สร้างคำขอลา (ตรวจ overlap, quota, advance notice)
+     * $bypassAdvanceNotice: HR/admin ยื่นแทนพนักงานได้โดยไม่ติดเงื่อนไขแจ้งล่วงหน้า
      */
-    public function create(array $data, int $userId): LeaveRequest
+    public function create(array $data, int $userId, bool $bypassAdvanceNotice = false): LeaveRequest
     {
-        return DB::transaction(function () use ($data, $userId) {
+        return DB::transaction(function () use ($data, $userId, $bypassAdvanceNotice) {
             $type = LeaveType::findOrFail($data['leave_type_id']);
             if (! $type->is_active) {
                 throw ValidationException::withMessages(['leave_type_id' => 'ประเภทการลานี้ปิดใช้งาน']);
@@ -54,8 +55,8 @@ class LeaveService
                 ]);
             }
 
-            // ตรวจ advance notice
-            if ($type->min_advance_notice_days > 0) {
+            // ตรวจ advance notice (ข้ามได้ถ้า HR/admin ยื่นแทน)
+            if (! $bypassAdvanceNotice && $type->min_advance_notice_days > 0) {
                 $start = Carbon::parse($data['start_date']);
                 $today = Carbon::today();
                 if ($start->diffInDays($today, false) > -$type->min_advance_notice_days) {
