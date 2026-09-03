@@ -223,21 +223,21 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Production rate items (เรทค่าจ้างรายสินค้า / piecework)
-    Route::middleware('permission:payroll.view')->get('/payroll/production-rates', [ProductionRateController::class, 'index']);
-    Route::middleware('permission:payroll.view')->get('/payroll/production-rates/{item}', [ProductionRateController::class, 'show']);
-    Route::middleware('permission:payroll.config')->group(function () {
+    Route::middleware('permission:payroll.view,production.view')->get('/payroll/production-rates', [ProductionRateController::class, 'index']);
+    Route::middleware('permission:payroll.view,production.view')->get('/payroll/production-rates/{item}', [ProductionRateController::class, 'show']);
+    Route::middleware('permission:payroll.config,production.manage')->group(function () {
         Route::post('/payroll/production-rates', [ProductionRateController::class, 'store']);
         Route::put('/payroll/production-rates/{item}', [ProductionRateController::class, 'update']);
         Route::delete('/payroll/production-rates/{item}', [ProductionRateController::class, 'destroy']);
     });
 
     // Work orders (ใบจ่ายงาน)
-    Route::middleware('permission:payroll.view')->group(function () {
+    Route::middleware('permission:payroll.view,production.view')->group(function () {
         Route::get('/payroll/work-orders', [WorkOrderController::class, 'index']);
         Route::get('/payroll/work-orders/summary', [WorkOrderController::class, 'summary']);
         Route::get('/payroll/work-orders/{workOrder}', [WorkOrderController::class, 'show']);
     });
-    Route::middleware('permission:payroll.config')->group(function () {
+    Route::middleware('permission:payroll.config,production.manage')->group(function () {
         Route::post('/payroll/work-orders', [WorkOrderController::class, 'store']);
         Route::put('/payroll/work-orders/{workOrder}', [WorkOrderController::class, 'update']);
         Route::delete('/payroll/work-orders/{workOrder}', [WorkOrderController::class, 'destroy']);
@@ -246,8 +246,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/payroll/work-orders/{workOrder}/daily-entries/{dailyEntry}', [WorkOrderController::class, 'destroyDailyEntry']);
         Route::post('/payroll/work-orders/{workOrder}/link-batch', [WorkOrderController::class, 'linkBatch']);
         Route::post('/payroll/work-orders/{workOrder}/unlink-batch', [WorkOrderController::class, 'unlinkBatch']);
-        Route::post('/payroll/work-orders/import-to-payroll', [WorkOrderController::class, 'importToPayroll']);
     });
+    // นำเข้าใบจ่ายงานเข้า payroll จริง — ยังต้องใช้สิทธิ์ตั้งค่าเงินเดือนเท่านั้น (ไม่ให้ production.manage เพียงอย่างเดียวเข้าถึง)
+    Route::middleware('permission:payroll.config')->post('/payroll/work-orders/import-to-payroll', [WorkOrderController::class, 'importToPayroll']);
 
     // OT management (HR)
     Route::middleware('permission:payroll.ot_manage')->group(function () {
