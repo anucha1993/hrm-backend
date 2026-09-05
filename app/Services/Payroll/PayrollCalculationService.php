@@ -444,6 +444,12 @@ class PayrollCalculationService
 
     protected function summarizeOt(Employee $employee, PayrollPeriod $period, float $employeeHourlyRate): array
     {
+        // แผนกที่ปิด OT ไว้ (ot_eligible=false) ต้องไม่ได้รับค่า OT เลย แม้จะมีแถวใน ot_session_employees อยู่ก่อนแล้วก็ตาม
+        // (เช่น ถูกเพิ่มไว้ตั้งแต่ก่อนย้ายแผนก หรือก่อนตั้งค่านี้) — กันไว้อีกชั้นนอกเหนือจากตอนสร้าง/แก้ไขรอบ OT
+        if (! app(\App\Services\WorkScheduleService::class)->allowsOt($employee)) {
+            return ['hours' => 0.0, 'amount' => 0.0, 'details' => []];
+        }
+
         $rows = OtSessionEmployee::with('session')
             ->where('employee_id', $employee->id)
             ->whereHas('session', function ($q) use ($period) {

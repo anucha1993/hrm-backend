@@ -23,6 +23,10 @@ class EmployeeAdvance extends Model
         'repaid_amount', 'status',
         'approved_by', 'approved_at', 'approval_note',
         'paid_by', 'paid_at', 'created_by',
+        'disbursement_method', 'production_advance_rule_id',
+        'tiger_voucher_code', 'tiger_voucher_ref_num', 'tiger_voucher_status',
+        'tiger_voucher_response', 'tiger_voucher_issued_at',
+        'eligibility_bypassed', 'eligibility_bypass_reason', 'eligibility_bypass_by', 'eligibility_bypass_at',
     ];
 
     protected $casts = [
@@ -31,6 +35,10 @@ class EmployeeAdvance extends Model
         'request_date' => 'date',
         'approved_at' => 'datetime',
         'paid_at' => 'datetime',
+        'tiger_voucher_response' => 'array',
+        'tiger_voucher_issued_at' => 'datetime',
+        'eligibility_bypassed' => 'boolean',
+        'eligibility_bypass_at' => 'datetime',
     ];
 
     protected $appends = ['remaining_amount'];
@@ -58,6 +66,16 @@ class EmployeeAdvance extends Model
     public function repayments(): HasMany
     {
         return $this->hasMany(EmployeeAdvanceRepayment::class);
+    }
+
+    public function productionAdvanceRule(): BelongsTo
+    {
+        return $this->belongsTo(ProductionAdvanceRule::class);
+    }
+
+    public function bypassedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'eligibility_bypass_by');
     }
 
     public function getRemainingAmountAttribute(): float

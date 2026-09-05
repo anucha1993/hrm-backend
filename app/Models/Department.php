@@ -20,17 +20,23 @@ class Department extends Model
         self::ATTENDANCE_NONE,
     ];
 
-    protected $fillable = ['code', 'name', 'description', 'work_profile_id', 'attendance_mode', 'is_active'];
+    protected $fillable = ['code', 'name', 'description', 'work_profile_id', 'attendance_mode', 'ot_eligible', 'is_active'];
 
-    protected $casts = ['is_active' => 'boolean'];
+    protected $casts = ['is_active' => 'boolean', 'ot_eligible' => 'boolean'];
 
     protected $attributes = [
         'attendance_mode' => self::ATTENDANCE_FULL,
+        'ot_eligible' => true,
     ];
 
     public function tracksAttendance(): bool
     {
         return $this->attendance_mode !== self::ATTENDANCE_NONE;
+    }
+
+    public function allowsOt(): bool
+    {
+        return $this->ot_eligible;
     }
 
     public function requiresCheckOut(): bool

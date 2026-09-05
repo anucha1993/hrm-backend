@@ -217,7 +217,7 @@ class AttendanceImportController extends Controller
                 $shiftEnd = Carbon::parse($checkedAt->format('Y-m-d') . ' ' . $shift->end_time, $tz);
                 if ($checkedAt->lt($shiftEnd)) {
                     $status = 'early_leave';
-                } elseif ($checkedAt->gt($shiftEnd->copy()->addMinutes(15))) {
+                } elseif ($checkedAt->gt($shiftEnd->copy()->addMinutes(15)) && $this->schedule->allowsOt($employee)) {
                     $status = 'overtime';
                 }
             }

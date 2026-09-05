@@ -97,7 +97,7 @@ class AttendanceController extends Controller
         } elseif (! $isHoliday && $shift && $data['type'] === 'check_out') {
             $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
             if ($local->lt($shiftEnd)) $status = 'early_leave';
-            elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
+            elseif ($local->gt($shiftEnd->copy()->addMinutes(15)) && $this->schedule->allowsOt($employee)) $status = 'overtime';
         }
 
         // เก็บรูป
@@ -426,7 +426,7 @@ class AttendanceController extends Controller
                 } elseif ($data['type'] === 'check_out') {
                     $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
                     if ($local->lt($shiftEnd)) $status = 'early_leave';
-                    elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) $status = 'overtime';
+                    elseif ($local->gt($shiftEnd->copy()->addMinutes(15)) && $this->schedule->allowsOt($employee)) $status = 'overtime';
                 }
             }
         }
@@ -549,14 +549,14 @@ class AttendanceController extends Controller
                         $shiftEnd = Carbon::parse($local->format('Y-m-d') . ' ' . $shift->end_time, self::TZ);
                         if ($local->lt($shiftEnd)) {
                             $status = 'early_leave';
-                        } elseif ($local->gt($shiftEnd->copy()->addMinutes(15))) {
+                        } elseif ($local->gt($shiftEnd->copy()->addMinutes(15)) && $this->schedule->allowsOt($employee)) {
                             $status = 'overtime';
                         }
                     }
                 }
 
-                // ระบุด้วยมือว่าเป็นวัน OT (ไม่ต้องพึ่งการคำนวณจากเวลาออกงานเทียบกะ)
-                if ($type === 'check_out' && ! empty($day['is_ot'])) {
+                // ระบุด้วยมือว่าเป็นวัน OT (ไม่ต้องพึ่งการคำนวณจากเวลาออกงานเทียบกะ) — เว้นแผนกที่ปิด OT ไว้ ห้ามบังคับแม้ด้วยมือ
+                if ($type === 'check_out' && ! empty($day['is_ot']) && $this->schedule->allowsOt($employee)) {
                     $status = 'overtime';
                 }
 

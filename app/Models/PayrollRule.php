@@ -19,12 +19,15 @@ class PayrollRule extends Model
         'min_per_period', 'max_per_period',
         'period', 'priority', 'active',
         'effective_from', 'effective_to', 'note',
+        'department_ids', 'apply_months',
         'created_by', 'updated_by',
     ];
 
     protected $casts = [
         'tiers'           => 'array',
         'disqualifiers'   => 'array',
+        'department_ids'  => 'array',
+        'apply_months'    => 'array',
         'active'          => 'boolean',
         'amount'          => 'decimal:2',
         'min_per_period'  => 'decimal:2',

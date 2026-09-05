@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmploymentTypeController;
 use App\Http\Controllers\Api\GoodsDepositController;
 use App\Http\Controllers\Api\HipTimeIngestController;
+use App\Http\Controllers\Api\TigerVoucherSettingController;
 use App\Http\Controllers\Api\LabourController;
 use App\Http\Controllers\Api\OfficeLocationController;
 use App\Http\Controllers\Api\Payroll\CompensationComponentController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\Api\Payroll\PayrollPeriodController;
 use App\Http\Controllers\Api\Payroll\PayrollSlipController;
 use App\Http\Controllers\Api\Payroll\WorkOrderController;
 use App\Http\Controllers\Api\Payroll\ProductionRateController;
+use App\Http\Controllers\Api\Payroll\ProductionAdvanceRuleController;
 use App\Http\Controllers\Api\Payroll\TaxSettingController;
 use App\Http\Controllers\Api\PayrollRuleController;
 use App\Http\Controllers\Api\ReportController;
@@ -332,6 +334,7 @@ Route::middleware('auth:sanctum')->group(function () {
     /* ========================= เบิกเงินล่วงหน้า (ADVANCE) ========================= */
     Route::middleware('permission:advance.request')->group(function () {
         Route::get('/advances', [EmployeeAdvanceController::class, 'index']);
+        Route::get('/advances/production-status', [EmployeeAdvanceController::class, 'productionStatus']);
         Route::get('/advances/{advance}', [EmployeeAdvanceController::class, 'show']);
         Route::post('/advances', [EmployeeAdvanceController::class, 'store']);
         Route::post('/advances/{advance}/cancel', [EmployeeAdvanceController::class, 'cancel']);
@@ -394,6 +397,20 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ประวัติการ sync จาก HIP Time agent
     Route::middleware('permission:settings.view')->get('/hiptime/sync-logs', [HipTimeIngestController::class, 'syncLogs']);
+
+    /* ========================= TIGER VOUCHER (TigerPay) ========================= */
+    Route::middleware('permission:settings.view')->group(function () {
+        Route::get('/tiger-voucher/settings', [TigerVoucherSettingController::class, 'show']);
+        Route::get('/production-advance-rules', [ProductionAdvanceRuleController::class, 'index']);
+        Route::get('/production-advance-rules/{rule}', [ProductionAdvanceRuleController::class, 'show']);
+    });
+    Route::middleware('permission:settings.manage')->group(function () {
+        Route::put('/tiger-voucher/settings', [TigerVoucherSettingController::class, 'update']);
+        Route::post('/tiger-voucher/test-connection', [TigerVoucherSettingController::class, 'testConnection']);
+        Route::post('/production-advance-rules', [ProductionAdvanceRuleController::class, 'store']);
+        Route::put('/production-advance-rules/{rule}', [ProductionAdvanceRuleController::class, 'update']);
+        Route::delete('/production-advance-rules/{rule}', [ProductionAdvanceRuleController::class, 'destroy']);
+    });
 
     /* ========================= GOODS DEPOSITS (ใบมัดจำของใช้ทั่วไป) ========================= */
     Route::middleware('permission:goods_deposits.view')->group(function () {

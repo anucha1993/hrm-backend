@@ -26,6 +26,7 @@ class DepartmentController extends Controller
             'name'            => ['required', 'string', 'max:255'],
             'description'     => ['nullable', 'string'],
             'attendance_mode' => ['nullable', Rule::in(Department::ATTENDANCE_MODES)],
+            'ot_eligible'     => ['boolean'],
             'is_active'       => ['boolean'],
         ]);
         return response()->json(['data' => Department::create($data)], 201);
@@ -43,6 +44,7 @@ class DepartmentController extends Controller
             'name'            => ['sometimes', 'string', 'max:255'],
             'description'     => ['nullable', 'string'],
             'attendance_mode' => ['sometimes', Rule::in(Department::ATTENDANCE_MODES)],
+            'ot_eligible'     => ['boolean'],
             'is_active'       => ['boolean'],
         ]);
         $department->update($data);

@@ -179,6 +179,14 @@ class WorkScheduleService
     }
 
     /**
+     * แผนกของพนักงานคนนี้เปิดให้มี OT หรือไม่ (ตั้งค่าที่ระดับแผนก) — ไม่มีแผนก = ถือว่าอนุญาต (ค่าเริ่มต้นเดิม)
+     */
+    public function allowsOt(Employee $employee): bool
+    {
+        return $employee->department?->ot_eligible ?? true;
+    }
+
+    /**
      * วันที่นี้เป็นวันหยุดของโปรไฟล์ (หรือกลางทั้งบริษัทถ้า profileId = null) หรือไม่
      */
     public function isHolidayForProfile(?int $profileId, Carbon $when): bool

@@ -65,7 +65,7 @@ class HipTimeReclassifyService
 
             $shift = $this->schedule->resolveShift($employee, $local);
             $isHoliday = $shift ? $this->schedule->isHoliday($employee, $local) : false;
-            [$status, $lateMinutes] = $this->computeStatus($type, $local, $shift, $isHoliday);
+            [$status, $lateMinutes] = $this->computeStatus($type, $local, $shift, $isHoliday, $this->schedule->allowsOt($employee));
 
             $needsUpdate = $attendance->type !== $type
                 || $attendance->status !== $status
@@ -112,7 +112,7 @@ class HipTimeReclassifyService
     }
 
     /** @return array{0:string,1:?int} [status, lateMinutes] */
-    private function computeStatus(string $type, Carbon $checkedAt, $shift, bool $isHoliday): array
+    private function computeStatus(string $type, Carbon $checkedAt, $shift, bool $isHoliday, bool $allowsOt = true): array
     {
         $status = 'normal';
         $lateMinutes = null;
@@ -130,7 +130,7 @@ class HipTimeReclassifyService
                 $shiftEnd = Carbon::parse($checkedAt->format('Y-m-d') . ' ' . $shift->end_time, $tz);
                 if ($checkedAt->lt($shiftEnd)) {
                     $status = 'early_leave';
-                } elseif ($checkedAt->gt($shiftEnd->copy()->addMinutes(15))) {
+                } elseif ($checkedAt->gt($shiftEnd->copy()->addMinutes(15)) && $allowsOt) {
                     $status = 'overtime';
                 }
             }

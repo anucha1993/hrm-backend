@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Payroll;
 
 use App\Exports\OtSessionsExport;
 use App\Http\Controllers\Controller;
+use App\Models\Employee;
 use App\Models\OtSession;
 use App\Models\OtSessionEmployee;
 use Illuminate\Http\JsonResponse;
@@ -91,7 +92,15 @@ class OtSessionController extends Controller
             'description' => ['nullable', 'string'],
             'status' => ['sometimes', Rule::in(['draft', 'open', 'closed'])],
             'employees' => ['sometimes', 'array'],
-            'employees.*.employee_id' => ['required_with:employees', 'exists:employees,id'],
+            'employees.*.employee_id' => [
+                'required_with:employees', 'exists:employees,id',
+                function ($attribute, $value, $fail) {
+                    $employee = Employee::with('department:id,ot_eligible')->find($value);
+                    if ($employee && $employee->department && ! $employee->department->ot_eligible) {
+                        $fail("พนักงานรหัส {$employee->employee_code} อยู่แผนกที่ไม่อนุญาตให้มี OT");
+                    }
+                },
+            ],
             'employees.*.hours' => ['required_with:employees', 'numeric', 'min:0'],
             'employees.*.note' => ['nullable', 'string'],
         ];

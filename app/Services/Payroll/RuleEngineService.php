@@ -49,6 +49,9 @@ class RuleEngineService
         $log = [];
 
         foreach ($rules as $rule) {
+            if (! $this->ruleAppliesTo($rule, $employee, $period)) {
+                continue;
+            }
             $result = $this->applyRule($rule, $baseSalary, $stats);
             $log[] = ['rule' => $rule->code, 'name' => $rule->name, 'matched' => $result['matched'], 'amount' => $result['amount']];
             if (! $result['matched'] || $result['amount'] <= 0) {
@@ -171,6 +174,7 @@ class RuleEngineService
             'absent_count'      => (float) ($att['absent_days'] ?? 0),
             'early_leave_count' => (int)   ($att['early_leave_count'] ?? 0),
             'missing_punch'     => (int)   ($att['missing_punch_count'] ?? 0),
+            'present_days'      => (float) ($att['present_days'] ?? 0),
             'rating_avg'        => (float) ($extra['rating_avg'] ?? 0),
             'tenure_years'      => (int)   $tenureYears,
             'ot_hours'          => (float) ($ot['hours'] ?? 0),
@@ -255,6 +259,24 @@ class RuleEngineService
             'amount'  => $this->boundedAmount($rule, $this->amountFor($rule, $baseSalary, 1, $stats)),
             'formula' => "one_shot metric={$metric} {$rule->comparison} {$thr}",
         ];
+    }
+
+    /**
+     * เช็คว่ากฎนี้ครอบคลุมพนักงานคนนี้/งวดนี้หรือไม่ — department_ids (ว่าง=ทุกแผนก) + apply_months (ว่าง=ทุกงวด)
+     * กฎ period='yearly' จะจ่ายเฉพาะงวดแรกของเดือนนั้น (start_date วันที่ <=15) เท่านั้น กันจ่ายซ้ำ 2 ครั้ง/ปี เพราะงวดจ่ายเงินเดือนเป็นแบบครึ่งเดือน (2 งวด/เดือน)
+     */
+    protected function ruleAppliesTo(PayrollRule $rule, Employee $employee, PayrollPeriod $period): bool
+    {
+        if (! empty($rule->department_ids) && ! in_array($employee->department_id, $rule->department_ids, true)) {
+            return false;
+        }
+        if (! empty($rule->apply_months) && ! in_array((int) $period->start_date->month, array_map('intval', $rule->apply_months), true)) {
+            return false;
+        }
+        if ($rule->period === 'yearly' && $period->start_date->day > 15) {
+            return false;
+        }
+        return true;
     }
 
     protected function metricFor(PayrollRule $rule, array $stats): float

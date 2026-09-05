@@ -15,7 +15,7 @@ class PayrollRuleController extends Controller
     private const ALLOWED_TRIGGERS = [
         'late_count', 'late_minutes', 'absent_count', 'early_leave_count',
         'missing_punch', 'no_disqualifier', 'rating_avg', 'tenure_years',
-        'ot_hours', 'leave_over_quota',
+        'ot_hours', 'leave_over_quota', 'present_days',
     ];
 
     private const ALLOWED_DISQUALIFIERS = [
@@ -131,6 +131,7 @@ class PayrollRuleController extends Controller
                 ['value' => 'tenure_years',      'label' => 'อายุงาน',                       'unit' => 'ปี'],
                 ['value' => 'ot_hours',          'label' => 'ชั่วโมง OT',                    'unit' => 'ชม.'],
                 ['value' => 'leave_over_quota',  'label' => 'ลาเกินสิทธิ์',                  'unit' => 'วัน'],
+                ['value' => 'present_days',      'label' => 'จำนวนวันที่มาทำงาน',              'unit' => 'วัน'],
             ],
             'accumulation_modes' => [
                 ['value' => 'repeating',      'label' => 'ทุกๆ ครบ N (สะสมซ้ำ)'],
@@ -207,6 +208,10 @@ class PayrollRuleController extends Controller
             'active'            => ['nullable', 'boolean'],
             'effective_from'    => ['nullable', 'date'],
             'effective_to'      => ['nullable', 'date', 'after_or_equal:effective_from'],
+            'department_ids'    => ['nullable', 'array'],
+            'department_ids.*'  => ['integer', 'exists:departments,id'],
+            'apply_months'      => ['nullable', 'array'],
+            'apply_months.*'    => ['integer', 'min:1', 'max:12'],
             'note'              => ['nullable', 'string'],
         ]);
     }
