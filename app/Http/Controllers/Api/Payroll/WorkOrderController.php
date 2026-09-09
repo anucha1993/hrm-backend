@@ -410,6 +410,9 @@ class WorkOrderController extends Controller
                     'affects_ssf' => true,
                     'reference_type' => 'work_order',
                 ]);
+                $slip->gross_pay = round((float) $slip->gross_pay + $sum['amount'], 2);
+                $slip->net_pay = round((float) $slip->net_pay + $sum['amount'], 2);
+                $slip->save();
                 $imported++;
             }
             // ผูกใบงานทุกใบเข้ากับงวดนี้ (เฉพาะที่มี slip เท่านั้น) — ยังไม่เปลี่ยนสถานะเป็น "จ่ายแล้ว"
