@@ -52,6 +52,15 @@ class TigerVoucherService
         return rtrim((string) PayrollSetting::get('tiger_base_url', self::DEFAULT_BASE_URL), '/');
     }
 
+    /**
+     * บังคับ resolve DNS เป็น IPv4 เท่านั้น — เครือข่ายบางแห่ง (เช่น IPv6 เสียหรือช้า) ทำให้ curl แขวนรอจน timeout
+     * ก่อนจะ fallback เอง ทำให้เชื่อมต่อ TigerPay ไม่สำเร็จทั้งที่เซิร์ฟเวอร์ตอบปกติ (พบจากการทดสอบจริง)
+     */
+    private function http(): \Illuminate\Http\Client\PendingRequest
+    {
+        return Http::timeout(15)->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]]);
+    }
+
     private function credentials(): array
     {
         $encrypted = PayrollSetting::get('tiger_password', null);
@@ -81,8 +90,8 @@ class TigerVoucherService
         }
 
         try {
-            $res = Http::asForm()
-                ->timeout(15)
+            $res = $this->http()
+                ->asForm()
                 ->post($this->baseUrl() . '/api/tigerpay/login', [
                     'username' => $cred['username'],
                     'password' => $cred['password'],
@@ -120,8 +129,8 @@ class TigerVoucherService
         }
 
         try {
-            $res = Http::asForm()
-                ->timeout(15)
+            $res = $this->http()
+                ->asForm()
                 ->withToken($login['token'])
                 ->post($this->baseUrl() . '/api/voucher/create', [
                     'amount' => $params['amount'],
@@ -153,7 +162,7 @@ class TigerVoucherService
     {
         $login = $this->login();
         try {
-            $res = Http::timeout(15)
+            $res = $this->http()
                 ->when($login['success'], fn ($r) => $r->withToken($login['token']))
                 ->get($this->baseUrl() . '/api/voucher/show/' . urlencode($code));
         } catch (Throwable $e) {
@@ -170,7 +179,7 @@ class TigerVoucherService
             return ['success' => false, 'message' => $login['message'], 'data' => null];
         }
         try {
-            $res = Http::timeout(15)
+            $res = $this->http()
                 ->withToken($login['token'])
                 ->get($this->baseUrl() . '/api/voucher/cancel/' . urlencode($code));
         } catch (Throwable $e) {

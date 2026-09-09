@@ -336,6 +336,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/advances', [EmployeeAdvanceController::class, 'index']);
         Route::get('/advances/production-status', [EmployeeAdvanceController::class, 'productionStatus']);
         Route::get('/advances/{advance}', [EmployeeAdvanceController::class, 'show']);
+        Route::get('/advances/{advance}/voucher-print', [EmployeeAdvanceController::class, 'voucherPrint']);
         Route::post('/advances', [EmployeeAdvanceController::class, 'store']);
         Route::post('/advances/{advance}/cancel', [EmployeeAdvanceController::class, 'cancel']);
     });

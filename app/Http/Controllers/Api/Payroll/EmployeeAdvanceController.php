@@ -53,6 +53,47 @@ class EmployeeAdvanceController extends Controller
         ]);
     }
 
+    /**
+     * ข้อมูลสำหรับพิมพ์ใบ Tiger Voucher (สิทธิ์เดียวกับ show — ผู้อนุมัติ หรือเจ้าของคำขอเอง)
+     */
+    public function voucherPrint(EmployeeAdvance $advance, Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->hasPermission('advance.approve')) {
+            abort_unless($advance->employee_id === optional($user->employee)->id, 403);
+        }
+        abort_unless(
+            $advance->disbursement_method === 'tiger_voucher' && $advance->tiger_voucher_code,
+            404,
+            'คำขอนี้ยังไม่มี Tiger Voucher'
+        );
+
+        $advance->load('employee.department', 'payer:id,name');
+        $raw = $advance->tiger_voucher_response ?? [];
+
+        return response()->json(['data' => [
+            'company' => [
+                'name' => (string) (\App\Models\PayrollSetting::get('company_name') ?: 'บริษัท ชาญเจริญคอนกรีต จำกัด'),
+                'address' => (string) (\App\Models\PayrollSetting::get('company_address') ?: ''),
+            ],
+            'request_no' => $advance->request_no,
+            'amount' => (float) $advance->amount,
+            'reason' => $advance->reason,
+            'voucher_code' => $advance->tiger_voucher_code,
+            'ref_num' => $advance->tiger_voucher_ref_num,
+            'category' => $raw['category'] ?? 'Advance',
+            'start_at' => $raw['start_at'] ?? null,
+            'expire_at' => $raw['expire_at'] ?? null,
+            'issued_at' => $advance->tiger_voucher_issued_at,
+            'paid_by' => $advance->payer?->name,
+            'employee' => [
+                'employee_code' => $advance->employee?->employee_code,
+                'full_name' => trim(($advance->employee?->first_name ?? '') . ' ' . ($advance->employee?->last_name ?? '')),
+                'department' => optional($advance->employee?->department)->name,
+            ],
+        ]]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
