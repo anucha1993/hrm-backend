@@ -211,6 +211,36 @@ class RolesAndPermissionsSeeder extends Seeder
                 ->map(fn ($n) => $allPermissions[$n]->id)->all()
         );
 
+        // HrMember: เฉพาะใบมัดจำของใช้ทั่วไป + กำหนดการจ่ายการผลิต (เรทค่าจ้าง/ใบจ่ายงาน/บันทึกผลรายวัน)
+        // ห้ามเห็นเงินเดือน/รายได้/รายงานเงินเดือนเด็ดขาด — จึงไม่ให้ payroll.view/payroll.config/reports.view
+        $hrMember = Role::updateOrCreate(
+            ['name' => 'hr_member'],
+            ['display_name' => 'HrMember', 'description' => 'ดูแลใบมัดจำของใช้ทั่วไป + กำหนดการจ่ายการผลิต (ไม่เห็นเงินเดือน)', 'is_system' => false]
+        );
+        $hrMemberPerms = [
+            'employees.view',
+            'goods_deposits.view', 'goods_deposits.create', 'goods_deposits.update', 'goods_deposits.delete',
+            'production.view', 'production.manage',
+        ];
+        $hrMember->permissions()->sync(
+            collect($hrMemberPerms)->filter(fn ($n) => isset($allPermissions[$n]))
+                ->map(fn ($n) => $allPermissions[$n]->id)->all()
+        );
+
+        // OtMember: จัดการเฉพาะรอบ OT เท่านั้น — ห้ามเห็นเงินเดือน/รายได้/รายงานเงินเดือนเด็ดขาด
+        $otMember = Role::updateOrCreate(
+            ['name' => 'ot_member'],
+            ['display_name' => 'OtMember', 'description' => 'จัดการเฉพาะรอบ OT (ไม่เห็นเงินเดือน)', 'is_system' => false]
+        );
+        $otMemberPerms = [
+            'employees.view',
+            'payroll.ot_manage',
+        ];
+        $otMember->permissions()->sync(
+            collect($otMemberPerms)->filter(fn ($n) => isset($allPermissions[$n]))
+                ->map(fn ($n) => $allPermissions[$n]->id)->all()
+        );
+
         // Default Super Admin
         User::updateOrCreate(
             ['email' => 'superadmin@cyc-hrm.local'],

@@ -17,6 +17,31 @@ class WorkOrderController extends Controller
 {
     // ---------- WORK ORDERS ----------
 
+    /**
+     * ซ่อนตัวเงิน (ค่าจ้างการผลิต) ออกจากใบจ่ายงาน สำหรับผู้ใช้ที่มีแค่ production.view/production.manage
+     * (เช่น HrMember) แต่ไม่มีสิทธิ์เงินเดือนจริง — คงเหลือเฉพาะจำนวน/หน่วยผลิตให้เห็น ไม่เห็นตัวเงิน
+     */
+    private function maskMoney(array $data, Request $request): array
+    {
+        if ($request->user()?->hasPermission('payroll.view') || $request->user()?->hasPermission('payroll.config')) {
+            return $data;
+        }
+
+        $stripKeys = ['total_amount', 'rate_used', 'rate_at_target_override', 'rate_below_target_override', 'amount'];
+        $walk = function (&$node) use (&$walk, $stripKeys) {
+            if (! is_array($node)) return;
+            foreach ($node as $k => &$v) {
+                if (in_array($k, $stripKeys, true) && ! is_array($v)) {
+                    $v = null;
+                } elseif (is_array($v)) {
+                    $walk($v);
+                }
+            }
+        };
+        $walk($data);
+        return $data;
+    }
+
     public function index(Request $request): JsonResponse
     {
         $q = WorkOrder::with(['teamLeader', 'payrollPeriod', 'items.rateItem'])
@@ -34,10 +59,10 @@ class WorkOrderController extends Controller
         $rows = $q->orderByDesc('start_date')->orderByDesc('id')
             ->paginate(min(100, (int) $request->integer('per_page', 30)));
 
-        return response()->json(['data' => $rows]);
+        return response()->json(['data' => $this->maskMoney($rows->toArray(), $request)]);
     }
 
-    public function show(WorkOrder $workOrder): JsonResponse
+    public function show(WorkOrder $workOrder, Request $request): JsonResponse
     {
         $workOrder->load([
             'teamLeader',
@@ -73,7 +98,7 @@ class WorkOrderController extends Controller
         $data['linked_work_orders'] = $linked;
         $data['batch_total_amount'] = round((float) $workOrder->total_amount + $linked->sum('total_amount'), 2);
 
-        return response()->json(['data' => $data]);
+        return response()->json(['data' => $this->maskMoney($data, $request)]);
     }
 
     public function store(Request $request): JsonResponse
@@ -354,13 +379,13 @@ class WorkOrderController extends Controller
             ->get();
 
         return response()->json([
-            'data' => [
-                'rows' => $rows,
+            'data' => $this->maskMoney([
+                'rows' => $rows->map(fn ($r) => (array) $r)->all(),
                 'totals' => [
                     'leaders' => $rows->count(),
                     'amount' => $rows->sum('total_amount'),
                 ],
-            ],
+            ], $request),
         ]);
     }
 

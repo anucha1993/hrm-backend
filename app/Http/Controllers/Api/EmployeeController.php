@@ -59,12 +59,25 @@ class EmployeeController extends Controller
             }
         }
 
-        return response()->json(['data' => $q->paginate($request->integer('per_page', 20))]);
+        return response()->json(['data' => $q->paginate($request->integer('per_page', 20))->through(fn ($e) => $this->maskSalary($e, $request))]);
     }
 
-    public function show(Employee $employee): JsonResponse
+    public function show(Employee $employee, Request $request): JsonResponse
     {
-        return response()->json(['data' => $employee->load(self::RELATIONS)]);
+        return response()->json(['data' => $this->maskSalary($employee->load(self::RELATIONS), $request)]);
+    }
+
+    /**
+     * ซ่อน base_salary สำหรับผู้เรียกที่ไม่มีสิทธิ์เงินเดือน/HR จริง (เช่น HrMember/OtMember ที่มี employees.view เฉพาะเพื่อเลือกพนักงาน)
+     * กันไม่ให้เงินเดือนหลุดออกทาง endpoint นี้ไป ไม่กระทบ role เดิม (Member/Employee/Manager/Owner/HR/Admin ที่มี payroll.view หรือ employees.update อยู่แล้ว)
+     */
+    private function maskSalary(Employee $employee, Request $request): Employee
+    {
+        $user = $request->user();
+        if (! $user->hasPermission('payroll.view') && ! $user->hasPermission('employees.update')) {
+            $employee->setAttribute('base_salary', null);
+        }
+        return $employee;
     }
 
     public function store(Request $request): JsonResponse

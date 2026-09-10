@@ -7,8 +7,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAuditLog;
 use App\Models\Employee;
+use App\Models\EmployeeCompensation;
 use App\Models\LeaveRequest;
 use App\Models\OfficeLocation;
+use App\Models\OtSession;
+use App\Models\OtSessionEmployee;
 use App\Models\WorkShift;
 use App\Services\WorkScheduleService;
 use App\Support\HipTimeAttendanceWindow;
@@ -24,6 +27,9 @@ class AttendanceController extends Controller
 {
     /** timezone ของธุรกิจ — checked_at เก็บใน DB เป็น UTC แต่คำนวณสาย/OT บนเวลาท้องถิ่น */
     private const TZ = 'Asia/Bangkok';
+
+    /** ใช้เป็น description ของ OtSession ที่สร้างอัตโนมัติจากปฏิทินเวลางาน เพื่อแยกจากรอบที่สร้างด้วยมือเอง */
+    private const AUTO_OT_MARKER = 'สร้างอัตโนมัติจากปฏิทินเวลางาน';
 
     public function __construct(private readonly WorkScheduleService $schedule)
     {
@@ -645,6 +651,17 @@ class AttendanceController extends Controller
 
                     $createdIds[] = $attendance->id;
                 }
+
+                // ติ๊ก "เป็นวัน OT" ตอนบันทึกเวลาออกงาน — สร้าง/อัปเดตรอบ OT ให้อัตโนมัติ
+                // (กันไม่ให้ต้องไปสร้างรอบ OT ซ้ำอีกทีที่หน้า /payroll/ot-sessions)
+                if ($type === 'check_out') {
+                    $checkInSameDay = Attendance::where('employee_id', $employee->id)
+                        ->where('type', 'check_in')
+                        ->whereBetween('checked_at', [$dayStartUtc, $dayEndUtc])
+                        ->first();
+                    $checkInLocal = $checkInSameDay?->checked_at->copy()->setTimezone(self::TZ);
+                    $this->syncAutoOtSession($employee, $day['date'], $shift, $local, $checkInLocal, ! empty($day['is_ot']) && $this->schedule->allowsOt($employee));
+                }
             }
         }
 
@@ -658,6 +675,54 @@ class AttendanceController extends Controller
             ],
             'skipped_detail' => $skipped,
         ], 201);
+    }
+
+    /**
+     * ติ๊ก "เป็นวัน OT" ตอนกรอกเวลาออกงานในปฏิทิน — สร้าง/อัปเดตรอบ OT (OtSession + OtSessionEmployee)
+     * ให้อัตโนมัติ คิดชั่วโมง OT 2 แบบ: (1) มีกะทำงาน → ออกงานจริงลบเวลาเลิกกะ (2) ไม่มีกะ (fallback) →
+     * ชั่วโมงทำงานรวมทั้งวัน (เข้า-ออก) ลบชั่วโมงทำงานปกติ/วันจากโปรไฟล์ค่าจ้าง (ค่าเริ่มต้น 8 ชม.)
+     * ใช้ตัวคูณจากโปรไฟล์ค่าจ้าง (ot_rate_normal) — ถ้าไม่ติ๊ก OT หรือคำนวณชั่วโมงไม่ได้เลย จะลบรอบ OT
+     * อัตโนมัติเดิมของวันนี้ทิ้ง กันข้อมูลค้าง
+     */
+    private function syncAutoOtSession(Employee $employee, string $date, ?WorkShift $shift, Carbon $checkOutLocal, ?Carbon $checkInLocal, bool $isOt): void
+    {
+        $profile = EmployeeCompensation::with('profile')
+            ->where('employee_id', $employee->id)
+            ->where('is_active', true)
+            ->orderByDesc('effective_from')
+            ->first()?->profile;
+
+        $otHours = null;
+        if ($shift && $shift->end_time) {
+            $shiftEnd = Carbon::parse($date . ' ' . $shift->end_time, self::TZ);
+            if ($checkOutLocal->gt($shiftEnd)) {
+                $otHours = round($shiftEnd->diffInMinutes($checkOutLocal) / 60, 2);
+            }
+        } elseif ($checkInLocal) {
+            $workingHours = max(1, (int) ($profile?->working_hours_per_day ?? 8));
+            $totalHours = round($checkInLocal->diffInMinutes($checkOutLocal) / 60, 2);
+            $otHours = $totalHours > $workingHours ? round($totalHours - $workingHours, 2) : null;
+        }
+
+        if (! $isOt || ! $otHours) {
+            OtSessionEmployee::where('employee_id', $employee->id)
+                ->whereHas('session', fn ($q) => $q->where('ot_date', $date)->where('description', self::AUTO_OT_MARKER))
+                ->delete();
+            return;
+        }
+
+        $otType = $this->schedule->isHoliday($employee, $checkOutLocal) ? 'holiday_overtime' : 'normal';
+        $multiplier = $profile?->ot_rate_normal ?? 1.5;
+
+        $session = OtSession::firstOrCreate(
+            ['ot_date' => $date, 'ot_type' => $otType, 'description' => self::AUTO_OT_MARKER],
+            ['rate_mode' => 'multiplier', 'multiplier' => $multiplier, 'hourly_amount' => 0, 'status' => 'open']
+        );
+
+        OtSessionEmployee::updateOrCreate(
+            ['ot_session_id' => $session->id, 'employee_id' => $employee->id],
+            ['hours' => $otHours]
+        );
     }
 
     /**
@@ -702,6 +767,19 @@ class AttendanceController extends Controller
             'reason'        => $data['reason'],
             'user_id'       => Auth::id(),
         ]);
+
+        // ถ้าแก้ไขสถานะ OT ของรายการ "ออกงาน" ที่มีอยู่แล้ว (ไม่ได้เปลี่ยนเวลา) ให้ sync รอบ OT อัตโนมัติด้วยเช่นกัน
+        if ($attendance->type === 'check_out' && array_key_exists('status', $data)) {
+            $local = $attendance->checked_at->copy()->setTimezone(self::TZ);
+            $shift = $attendance->work_shift_id ? WorkShift::find($attendance->work_shift_id) : $this->resolveShift($attendance->employee, $local);
+            $isOt = $attendance->status === 'overtime' && $this->schedule->allowsOt($attendance->employee);
+            $checkInSameDay = Attendance::where('employee_id', $attendance->employee_id)
+                ->where('type', 'check_in')
+                ->whereBetween('checked_at', [$local->copy()->startOfDay()->utc(), $local->copy()->endOfDay()->utc()])
+                ->first();
+            $checkInLocal = $checkInSameDay?->checked_at->copy()->setTimezone(self::TZ);
+            $this->syncAutoOtSession($attendance->employee, $local->toDateString(), $shift, $local, $checkInLocal, $isOt);
+        }
 
         return response()->json([
             'data' => $attendance->fresh(['employee:id,employee_code,first_name,last_name', 'workShift', 'officeLocation', 'editor:id,name']),
