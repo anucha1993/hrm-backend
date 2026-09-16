@@ -250,12 +250,23 @@ class PayrollCalculationService
             $grossPay = round($basePay + $otPay + $allowances + $bonusTotal, 2);
 
             // 14. SSF (ฝั่งลูกจ้าง 5% บน fixed band 1650-15000 ตามค่าใน profile)
-            [$ssfEmp, $ssfEr] = $this->computeSsf($profile, $basePay + $allowances /* taxable+ssfable items */);
+            // ถ้าตั้งยอดหักเองไว้ (ssf_manual_amount) ใช้ยอดนั้นแทนการคำนวณอัตโนมัติ — เผื่อกรณีฐานที่ส่งประกันสังคมจริงต่างจากเงินเดือนที่จ่าย
+            if ($employeeComp->ssf_manual_amount !== null) {
+                $ssfEmp = $employeeComp->ssf_manual_split_biweekly
+                    ? round((float) $employeeComp->ssf_manual_amount / 2, 2)
+                    : round((float) $employeeComp->ssf_manual_amount, 2);
+                $ssfEr = $ssfEmp;
+                $ssfFormula = 'กำหนดเอง ' . number_format((float) $employeeComp->ssf_manual_amount)
+                    . ($employeeComp->ssf_manual_split_biweekly ? ' บาท/เดือน ÷ 2 งวด' : ' บาท/งวด');
+            } else {
+                [$ssfEmp, $ssfEr] = $this->computeSsf($profile, $basePay + $allowances /* taxable+ssfable items */);
+                $ssfFormula = "rate={$profile->ssf_rate}%, base capped " . number_format($profile->ssf_max_base);
+            }
             if ($ssfEmp > 0) {
                 $items[] = $this->makeItem(
                     $slip, 'ssf', 'tax_calc', 'SSF', 'ประกันสังคม',
                     $ssfEmp, $order++,
-                    formula: "rate={$profile->ssf_rate}%, base capped " . number_format($profile->ssf_max_base),
+                    formula: $ssfFormula,
                 );
             }
 

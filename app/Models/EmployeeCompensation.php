@@ -12,12 +12,15 @@ class EmployeeCompensation extends Model
     protected $fillable = [
         'employee_id', 'compensation_profile_id',
         'base_salary', 'hourly_rate_override',
+        'ssf_manual_amount', 'ssf_manual_split_biweekly',
         'effective_from', 'effective_to', 'is_active',
     ];
 
     protected $casts = [
         'base_salary' => 'decimal:2',
         'hourly_rate_override' => 'decimal:2',
+        'ssf_manual_amount' => 'decimal:2',
+        'ssf_manual_split_biweekly' => 'bool',
         'effective_from' => 'date',
         'effective_to' => 'date',
         'is_active' => 'bool',
