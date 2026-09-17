@@ -316,8 +316,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/leave/balances', [LeaveRequestController::class, 'updateBalance']);
     });
 
-    // Leave requests — ทุกคนยื่นได้ + ดูของตนเอง
-    Route::middleware('permission:leave.request')->group(function () {
+    // Leave requests — ทุกคนยื่นได้ + ดูของตนเอง (หรือมีสิทธิ์สร้างแทนพนักงานอื่นโดยเฉพาะ)
+    Route::middleware('permission:leave.request,leave.create_for_others')->group(function () {
         Route::get('/leave/requests', [LeaveRequestController::class, 'index']);
         Route::get('/leave/requests/export', [LeaveRequestController::class, 'export']);
         Route::get('/leave/requests/{leaveRequest}', [LeaveRequestController::class, 'show']);

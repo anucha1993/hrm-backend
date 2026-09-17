@@ -46,6 +46,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'leave' => [
                 'leave.request' => 'ยื่นคำขอลา และดูของตนเอง',
                 'leave.approve' => 'อนุมัติใบลา',
+                'leave.create_for_others' => 'สร้าง/ยื่นใบลาแทนพนักงานอื่น',
                 'leave.config' => 'ตั้งค่าประเภทการลา / โควต้า',
             ],
             'advance' => [

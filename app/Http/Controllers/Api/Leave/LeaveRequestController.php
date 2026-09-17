@@ -25,7 +25,7 @@ class LeaveRequestController extends Controller
             ->orderByDesc('id');
 
         // ถ้าไม่มีสิทธิ์ดูทั้งหมด — ดูได้เฉพาะของตัวเอง
-        if (! $user->hasPermission('leave.approve') && ! $user->hasPermission('leave.config')) {
+        if (! $user->hasPermission('leave.approve') && ! $user->hasPermission('leave.config') && ! $user->hasPermission('leave.create_for_others')) {
             $q->where('employee_id', optional($user->employee)->id ?? -1);
         } elseif ($eid = $request->integer('employee_id')) {
             $q->where('employee_id', $eid);
@@ -57,7 +57,7 @@ class LeaveRequestController extends Controller
         $user = $request->user();
         $q = LeaveRequest::with(['employee:id,employee_code,first_name,last_name', 'leaveType', 'reviewer:id,name'])
             ->orderByDesc('id');
-        if (! $user->hasPermission('leave.approve') && ! $user->hasPermission('leave.config')) {
+        if (! $user->hasPermission('leave.approve') && ! $user->hasPermission('leave.config') && ! $user->hasPermission('leave.create_for_others')) {
             $q->where('employee_id', optional($user->employee)->id ?? -1);
         } elseif ($eid = $request->integer('employee_id')) {
             $q->where('employee_id', $eid);
@@ -75,7 +75,7 @@ class LeaveRequestController extends Controller
     public function show(LeaveRequest $leaveRequest, Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->hasPermission('leave.approve') && ! $user->hasPermission('leave.config')) {
+        if (! $user->hasPermission('leave.approve') && ! $user->hasPermission('leave.config') && ! $user->hasPermission('leave.create_for_others')) {
             $empId = optional($user->employee)->id;
             abort_unless($leaveRequest->employee_id === $empId, 403);
         }
@@ -98,8 +98,9 @@ class LeaveRequestController extends Controller
             'contact_phone' => ['nullable', 'string', 'max:30'],
         ];
 
-        // HR สามารถยื่นแทนพนักงานได้
-        if ($user->hasPermission('leave.config')) {
+        // HR สามารถยื่นแทนพนักงานได้ (leave.config หรือสิทธิ์เฉพาะ leave.create_for_others)
+        $canFileForOthers = $user->hasPermission('leave.config') || $user->hasPermission('leave.create_for_others');
+        if ($canFileForOthers) {
             $rules['employee_id'] = ['required', 'exists:employees,id'];
         }
         $data = $request->validate($rules);
@@ -110,7 +111,7 @@ class LeaveRequestController extends Controller
         }
 
         // HR/admin ยื่นแทนพนักงานได้โดยไม่ติดเงื่อนไข "ต้องแจ้งล่วงหน้า X วัน"
-        $req = $this->service->create($data, $user->id, $user->hasPermission('leave.config'));
+        $req = $this->service->create($data, $user->id, $canFileForOthers);
         return response()->json(['data' => $req], 201);
     }
 
@@ -150,7 +151,8 @@ class LeaveRequestController extends Controller
         // ตรวจสิทธิ์
         if ($employeeId !== optional($user->employee)->id
             && ! $user->hasPermission('leave.approve')
-            && ! $user->hasPermission('leave.config')) {
+            && ! $user->hasPermission('leave.config')
+            && ! $user->hasPermission('leave.create_for_others')) {
             abort(403);
         }
 
