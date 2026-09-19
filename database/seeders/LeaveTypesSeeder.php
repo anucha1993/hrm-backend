@@ -28,11 +28,21 @@ class LeaveTypesSeeder extends Seeder
                 'order' => 2,
             ],
             [
-                'code' => 'PERSONAL', 'name' => 'ลากิจส่วนตัว', 'name_en' => 'Personal Leave',
+                'code' => 'PERSONAL', 'name' => 'ลากิจ (แจ้งล่วงหน้า)', 'name_en' => 'Personal Leave (Advance Notice)',
                 'color' => '#f59e0b', 'is_paid' => true, 'requires_approval' => true,
                 'requires_attachment' => false, 'counts_as_workday' => true, 'affects_diligence' => true,
                 'default_quota_days' => 3, 'min_advance_notice_days' => 1,
                 'allow_half_day' => true, 'allow_negative_balance' => false,
+                'description' => 'ต้องยื่นล่วงหน้าอย่างน้อย 1 วัน ไม่หักเงิน',
+                'order' => 3,
+            ],
+            [
+                'code' => 'PERSONAL_URGENT', 'name' => 'ลากิจ (ฉุกเฉิน/ไม่แจ้งล่วงหน้า)', 'name_en' => 'Personal Leave (Urgent/No Notice)',
+                'color' => '#d97706', 'is_paid' => false, 'requires_approval' => true,
+                'requires_attachment' => false, 'counts_as_workday' => true, 'affects_diligence' => true,
+                'default_quota_days' => 0, 'min_advance_notice_days' => 0,
+                'allow_half_day' => true, 'allow_negative_balance' => true,
+                'description' => 'ยื่นแบบไม่แจ้งล่วงหน้าได้ทันที แต่ถือเป็นวันลาไม่รับเงินเดือน',
                 'order' => 3,
             ],
             [
