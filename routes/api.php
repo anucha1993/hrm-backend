@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmploymentTypeController;
 use App\Http\Controllers\Api\GoodsDepositController;
+use App\Http\Controllers\Api\Dorm\DormRoomController;
+use App\Http\Controllers\Api\Dorm\ElectricityBillController;
 use App\Http\Controllers\Api\HipTimeIngestController;
 use App\Http\Controllers\Api\TigerVoucherSettingController;
 use App\Http\Controllers\Api\LabourController;
@@ -430,6 +432,24 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     Route::middleware('permission:goods_deposits.delete')->group(function () {
         Route::delete('/goods-deposits/{deposit}', [GoodsDepositController::class, 'destroy']);
+    });
+
+    /* ========================= ค่าไฟ/หอพัก (DORM & ELECTRICITY BILLS) ========================= */
+    Route::middleware('permission:dorm.view')->group(function () {
+        Route::get('/dorm-rooms', [DormRoomController::class, 'index']);
+        Route::get('/electricity-bills', [ElectricityBillController::class, 'index']);
+        Route::get('/electricity-bills/{bill}', [ElectricityBillController::class, 'show']);
+    });
+    Route::middleware('permission:dorm.manage')->group(function () {
+        Route::post('/dorm-rooms', [DormRoomController::class, 'store']);
+        Route::put('/dorm-rooms/{room}', [DormRoomController::class, 'update']);
+        Route::delete('/dorm-rooms/{room}', [DormRoomController::class, 'destroy']);
+
+        Route::post('/electricity-bills', [ElectricityBillController::class, 'store']);
+        Route::post('/electricity-bills/{bill}/sync-rooms', [ElectricityBillController::class, 'syncRooms']);
+        Route::put('/electricity-bills/{bill}/items/{item}', [ElectricityBillController::class, 'updateItem']);
+        Route::post('/electricity-bills/{bill}/finalize', [ElectricityBillController::class, 'finalize']);
+        Route::delete('/electricity-bills/{bill}', [ElectricityBillController::class, 'destroy']);
     });
 
     /* ========================= REPORTS ========================= */

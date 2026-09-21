@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Payroll;
 use App\Exports\PayrollSlipsExport;
 use App\Http\Controllers\Controller;
 use App\Models\GoodsDepositSlip;
+use App\Models\ElectricityBillInstallment;
 use App\Models\PayrollSlip;
 use App\Models\PayrollSlipItem;
 use App\Services\Payroll\PayrollApprovalService;
@@ -93,6 +94,12 @@ class PayrollSlipController extends Controller
             'payslip_id' => null,
             'deducted_at' => null,
         ]);
+        ElectricityBillInstallment::where('payslip_id', $slip->id)->update([
+            'status' => ElectricityBillInstallment::STATUS_PENDING,
+            'payroll_period_id' => null,
+            'payslip_id' => null,
+            'deducted_at' => null,
+        ]);
         $slip->items()->delete();
         $slip->delete();
         return response()->json(['message' => 'ลบเรียบร้อย']);
@@ -161,6 +168,15 @@ class PayrollSlipController extends Controller
         if ($item->reference_type === GoodsDepositSlip::class && $item->reference_id) {
             GoodsDepositSlip::where('id', $item->reference_id)->update([
                 'status' => GoodsDepositSlip::STATUS_PENDING,
+                'payroll_period_id' => null,
+                'payslip_id' => null,
+                'deducted_at' => null,
+            ]);
+        }
+
+        if ($item->reference_type === ElectricityBillInstallment::class && $item->reference_id) {
+            ElectricityBillInstallment::where('id', $item->reference_id)->update([
+                'status' => ElectricityBillInstallment::STATUS_PENDING,
                 'payroll_period_id' => null,
                 'payslip_id' => null,
                 'deducted_at' => null,

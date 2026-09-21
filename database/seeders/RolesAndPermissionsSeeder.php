@@ -77,6 +77,10 @@ class RolesAndPermissionsSeeder extends Seeder
                 'goods_deposits.update' => 'แก้ไข/ตัดยอดใบมัดจำของใช้ทั่วไป',
                 'goods_deposits.delete' => 'ลบใบมัดจำของใช้ทั่วไป',
             ],
+            'dorm' => [
+                'dorm.view'   => 'ดูห้องพัก/ใบค่าไฟ',
+                'dorm.manage' => 'จัดการห้องพัก/บันทึกมิเตอร์/ปิดรอบบิลค่าไฟ',
+            ],
             'reports' => [
                 'reports.view' => 'ดูรายงาน',
             ],
@@ -176,6 +180,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.view',
             'master_data.manage',
             'goods_deposits.view', 'goods_deposits.create', 'goods_deposits.update', 'goods_deposits.delete',
+            'dorm.view', 'dorm.manage',
         ];
         $hr->permissions()->sync(
             collect($hrPerms)->filter(fn ($n) => isset($allPermissions[$n]))

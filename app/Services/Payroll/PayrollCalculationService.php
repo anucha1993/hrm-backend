@@ -4,6 +4,7 @@ namespace App\Services\Payroll;
 
 use App\Models\Attendance;
 use App\Models\CompensationProfile;
+use App\Models\ElectricityBillInstallment;
 use App\Models\Employee;
 use App\Models\EmployeeCompensation;
 use App\Models\EmployeeComponent;
@@ -80,6 +81,13 @@ class PayrollCalculationService
                 // ไม่งั้นคำนวณซ้ำ (recompute) จะหาไม่เจอเพราะสถานะยังเป็น deducted อยู่ ทำให้ไม่ถูกตัดเข้าในสลิปใหม่
                 GoodsDepositSlip::where('payslip_id', $existing->id)->update([
                     'status' => GoodsDepositSlip::STATUS_PENDING,
+                    'payroll_period_id' => null,
+                    'payslip_id' => null,
+                    'deducted_at' => null,
+                ]);
+                // เช่นเดียวกัน คืนสถานะงวดค่าไฟ/ค่าห้องที่เคยตัดไว้ในสลิปเก่ากลับเป็น pending ก่อนลบ
+                ElectricityBillInstallment::where('payslip_id', $existing->id)->update([
+                    'status' => ElectricityBillInstallment::STATUS_PENDING,
                     'payroll_period_id' => null,
                     'payslip_id' => null,
                     'deducted_at' => null,
@@ -246,6 +254,9 @@ class PayrollCalculationService
             // 12.5 หักยอดใบมัดจำของใช้ทั่วไปที่รอตัดในงวดนี้ (auto — งวดของใบตรงกับงวดจ่ายเงิน)
             $goodsDepositDeduction = $this->applyGoodsDeposits($slip, $employee, $period, $items, $order);
 
+            // 12.6 หักงวดค่าไฟ/ค่าห้อง (หอพัก) ที่ครบกำหนดในงวดนี้ (auto)
+            $electricityBillDeduction = $this->applyElectricityBills($slip, $employee, $period, $items, $order);
+
             // 13. คำนวณ gross
             $grossPay = round($basePay + $otPay + $allowances + $bonusTotal, 2);
 
@@ -282,7 +293,7 @@ class PayrollCalculationService
             $log['tax'] = $taxSnapshotMeta;
 
             // 16. รวมยอดหัก / net
-            $deductionsTotal = round($componentDeductions + $ruleDeductions + $lateDeduction + $absentDeduction + $goodsDepositDeduction, 2);
+            $deductionsTotal = round($componentDeductions + $ruleDeductions + $lateDeduction + $absentDeduction + $goodsDepositDeduction + $electricityBillDeduction, 2);
 
             // 16.5 apply global caps (max_deduction_percent / min_net_salary)
             // แสดงเป็นรายการ "หัก" ติดลบ (ลดยอดหักรวม) ไม่ใช่รายได้ เพื่อไม่ให้ปนกับยอดรายได้จริง (gross_pay)
@@ -312,7 +323,7 @@ class PayrollCalculationService
                 'gross_pay' => $grossPay,
                 'late_deduction' => $lateDeduction,
                 'absent_deduction' => $absentDeduction,
-                'other_deductions_total' => $componentDeductions + $ruleDeductions + $goodsDepositDeduction,
+                'other_deductions_total' => $componentDeductions + $ruleDeductions + $goodsDepositDeduction + $electricityBillDeduction,
                 'ssf_employee' => $ssfEmp,
                 'ssf_employer' => $ssfEr,
                 'tax' => $tax,
@@ -368,6 +379,39 @@ class PayrollCalculationService
 
             $d->update([
                 'status' => GoodsDepositSlip::STATUS_DEDUCTED,
+                'payroll_period_id' => $period->id,
+                'payslip_id' => $slip->id,
+                'deducted_at' => now(),
+            ]);
+        }
+
+        return $total;
+    }
+
+    /**
+     * ตัดยอดงวดค่าไฟ/หอพักที่ยัง pending และ due_date อยู่ในงวดนี้ — เพิ่มเป็นรายการหักอัตโนมัติ
+     */
+    protected function applyElectricityBills(PayrollSlip $slip, Employee $employee, PayrollPeriod $period, array &$items, int &$order): float
+    {
+        $installments = ElectricityBillInstallment::with('item.room')
+            ->where('employee_id', $employee->id)
+            ->where('status', ElectricityBillInstallment::STATUS_PENDING)
+            ->whereBetween('due_date', [$period->start_date, $period->end_date])
+            ->orderBy('due_date')
+            ->get();
+
+        $total = 0.0;
+        foreach ($installments as $ins) {
+            $roomNo = $ins->item?->room?->room_no ?? '-';
+            $items[] = $this->makeItem(
+                $slip, 'deduction', 'manual', 'ELECTRICITY', "หักค่าไฟ/ค่าห้อง ห้อง {$roomNo} (งวดที่ {$ins->installment_no})",
+                (float) $ins->amount, $order++,
+                referenceId: $ins->id, referenceType: ElectricityBillInstallment::class,
+            );
+            $total += (float) $ins->amount;
+
+            $ins->update([
+                'status' => ElectricityBillInstallment::STATUS_DEDUCTED,
                 'payroll_period_id' => $period->id,
                 'payslip_id' => $slip->id,
                 'deducted_at' => now(),
