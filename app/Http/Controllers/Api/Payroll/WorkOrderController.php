@@ -126,7 +126,7 @@ class WorkOrderController extends Controller
             return $wo;
         });
 
-        return $this->show($wo->fresh());
+        return $this->show($wo->fresh(), $request);
     }
 
     public function update(Request $request, WorkOrder $workOrder): JsonResponse
@@ -150,10 +150,9 @@ class WorkOrderController extends Controller
             ], fn($v) => $v !== null));
 
             if (isset($data['items'])) {
-                // ลบ items เก่า — cascade ลบ daily_entry_items ที่อ้างถึง item เก่าด้วย
-                $workOrder->items()->delete();
-                $this->saveItems($workOrder, $data['items']);
-                // หาก items ใหม่ — daily_entries เดิมที่ไม่มี items แล้วจะแสดง qty=0 ตามปกติ
+                // upsert ตาม id เดิม (ไม่ลบ-สร้างใหม่ทั้งหมด) เพื่อไม่ให้ cascade ลบ daily_entry_items
+                // ของ item ที่ไม่ได้เปลี่ยนแปลง — ลบเฉพาะ item ที่ผู้ใช้เอาออกจริงเท่านั้น
+                $this->syncItems($workOrder, $data['items']);
             }
 
             if (isset($data['members'])) {
@@ -170,7 +169,7 @@ class WorkOrderController extends Controller
             $this->syncPayrollAfterRecalculate($workOrder);
         });
 
-        return $this->show($workOrder->fresh());
+        return $this->show($workOrder->fresh(), $request);
     }
 
     public function destroy(WorkOrder $workOrder): JsonResponse
@@ -211,14 +210,14 @@ class WorkOrderController extends Controller
             $target->update(['batch_code' => $code]);
         });
 
-        return $this->show($workOrder->fresh());
+        return $this->show($workOrder->fresh(), $request);
     }
 
     /**
      * ยกเลิกการเชื่อมลอตผลิตของใบงานนี้ (ตัวเองออกจากกลุ่มเท่านั้น)
      * ถ้าเหลือใบเดียวในกลุ่มเดิม จะเคลียร์รหัสของใบที่เหลือด้วย (ผูกกับตัวเองคนเดียวไม่มีประโยชน์)
      */
-    public function unlinkBatch(WorkOrder $workOrder): JsonResponse
+    public function unlinkBatch(WorkOrder $workOrder, Request $request): JsonResponse
     {
         DB::transaction(function () use ($workOrder) {
             $oldCode = $workOrder->batch_code;
@@ -231,7 +230,7 @@ class WorkOrderController extends Controller
             }
         });
 
-        return $this->show($workOrder->fresh());
+        return $this->show($workOrder->fresh(), $request);
     }
 
     // ---------- DAILY ENTRIES ----------
@@ -261,7 +260,7 @@ class WorkOrderController extends Controller
             $this->syncPayrollAfterRecalculate($workOrder);
         });
 
-        return $this->show($workOrder->fresh());
+        return $this->show($workOrder->fresh(), $request);
     }
 
     public function updateDailyEntry(Request $request, WorkOrder $workOrder, WorkOrderDailyEntry $dailyEntry): JsonResponse
@@ -290,10 +289,10 @@ class WorkOrderController extends Controller
             $this->syncPayrollAfterRecalculate($workOrder);
         });
 
-        return $this->show($workOrder->fresh());
+        return $this->show($workOrder->fresh(), $request);
     }
 
-    public function destroyDailyEntry(WorkOrder $workOrder, WorkOrderDailyEntry $dailyEntry): JsonResponse
+    public function destroyDailyEntry(WorkOrder $workOrder, WorkOrderDailyEntry $dailyEntry, Request $request): JsonResponse
     {
         abort_unless($dailyEntry->work_order_id === $workOrder->id, 404);
         if ($workOrder->status === 'paid') {
@@ -304,7 +303,7 @@ class WorkOrderController extends Controller
             $workOrder->refresh()->recalculate();
             $this->syncPayrollAfterRecalculate($workOrder);
         });
-        return $this->show($workOrder->fresh());
+        return $this->show($workOrder->fresh(), $request);
     }
 
     /**
@@ -475,6 +474,7 @@ class WorkOrderController extends Controller
             'note' => ['nullable', 'string', 'max:500'],
             'batch_code' => ['nullable', 'string', 'max:40'],
             'items' => [$req, 'array', 'min:1'],
+            'items.*.id' => ['nullable', 'integer'],
             'items.*.production_rate_item_id' => ['required', 'exists:production_rate_items,id'],
             'items.*.target_qty' => ['required', 'numeric', 'min:0'],
             'items.*.rate_at_target_override' => ['nullable', 'numeric', 'min:0'],
@@ -523,6 +523,34 @@ class WorkOrderController extends Controller
                 'sort_order' => $idx,
             ]);
         }
+    }
+
+    /**
+     * ใช้ตอน update() แทน delete-all-then-recreate — คงค่า id เดิมของ item ที่ยังอยู่
+     * (แก้ target_qty/override ในแถวเดิม) เพื่อไม่ให้ cascade ลบ daily_entry_items
+     * ที่ผูกกับ item นั้น ลบทิ้งเฉพาะ item ที่ผู้ใช้เอาออกจากฟอร์มจริง ๆ เท่านั้น
+     */
+    private function syncItems(WorkOrder $wo, array $items): void
+    {
+        $existingIds = $wo->items()->pluck('id')->all();
+        $keepIds = [];
+        foreach (array_values($items) as $idx => $it) {
+            $id = $it['id'] ?? null;
+            $attrs = [
+                'production_rate_item_id' => $it['production_rate_item_id'],
+                'target_qty' => $it['target_qty'],
+                'rate_at_target_override' => $it['rate_at_target_override'] ?? null,
+                'rate_below_target_override' => $it['rate_below_target_override'] ?? null,
+                'sort_order' => $idx,
+            ];
+            if ($id && in_array($id, $existingIds, true)) {
+                $wo->items()->where('id', $id)->update($attrs);
+                $keepIds[] = $id;
+            } else {
+                $keepIds[] = $wo->items()->create($attrs)->id;
+            }
+        }
+        $wo->items()->whereNotIn('id', $keepIds)->delete();
     }
 
     private function saveMembers(WorkOrder $wo, array $members): void
