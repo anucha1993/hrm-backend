@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\Dorm;
 
 use App\Http\Controllers\Controller;
 use App\Models\DormRoom;
+use App\Models\ElectricityBill;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class DormRoomController extends Controller
@@ -35,10 +37,20 @@ class DormRoomController extends Controller
 
     public function destroy(DormRoom $room): JsonResponse
     {
-        if ($room->items()->exists()) {
-            return response()->json(['message' => 'ห้องนี้มีประวัติบิลค่าไฟแล้ว ไม่สามารถลบได้ — ใช้การปิดใช้งานแทน'], 422);
+        $hasFinalizedBill = $room->items()
+            ->whereHas('bill', fn ($q) => $q->where('status', ElectricityBill::STATUS_FINALIZED))
+            ->exists();
+        if ($hasFinalizedBill) {
+            return response()->json(['message' => 'ห้องนี้มีใบค่าไฟที่ปิดรอบแล้ว ไม่สามารถลบได้ — ใช้การปิดใช้งานแทน'], 422);
         }
-        $room->delete();
+
+        DB::transaction(function () use ($room) {
+            // ห้องนี้อาจมีรายการอยู่ในบิล "ฉบับร่าง" เท่านั้น (ยังไม่ปิดรอบ) — ลบรายการเหล่านั้นออกก่อน
+            // เพื่อให้ลบห้องได้ (FK ของ electricity_bill_items.dorm_room_id เป็น restrictOnDelete)
+            $room->items()->delete();
+            $room->delete();
+        });
+
         return response()->json(['message' => 'ลบเรียบร้อย']);
     }
 
