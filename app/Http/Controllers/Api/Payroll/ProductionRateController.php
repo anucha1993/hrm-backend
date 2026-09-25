@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Payroll;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\MasksMoney;
 use App\Models\ProductionRateItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -10,6 +11,8 @@ use Illuminate\Validation\Rule;
 
 class ProductionRateController extends Controller
 {
+    use MasksMoney;
+
     public function index(Request $request): JsonResponse
     {
         $q = ProductionRateItem::query()
@@ -27,12 +30,13 @@ class ProductionRateController extends Controller
                    ->orWhere('code', 'like', "%{$search}%");
             });
         }
-        return response()->json(['data' => $q->get()]);
+        $data = $q->get()->toArray();
+        return response()->json(['data' => $this->maskMoney($data, $request, ['rate_at_target', 'rate_below_target'])]);
     }
 
-    public function show(ProductionRateItem $item): JsonResponse
+    public function show(ProductionRateItem $item, Request $request): JsonResponse
     {
-        return response()->json(['data' => $item]);
+        return response()->json(['data' => $this->maskMoney($item->toArray(), $request, ['rate_at_target', 'rate_below_target'])]);
     }
 
     public function store(Request $request): JsonResponse

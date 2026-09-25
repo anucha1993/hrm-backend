@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Payroll;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\MasksMoney;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderDailyEntry;
 use App\Models\WorkOrderItem;
@@ -15,32 +16,9 @@ use Illuminate\Validation\Rule;
 
 class WorkOrderController extends Controller
 {
+    use MasksMoney;
+
     // ---------- WORK ORDERS ----------
-
-    /**
-     * ซ่อนตัวเงิน (ค่าจ้างการผลิต) ออกจากใบจ่ายงาน สำหรับผู้ใช้ที่มีแค่ production.view/production.manage
-     * (เช่น HrMember) แต่ไม่มีสิทธิ์เงินเดือนจริง — คงเหลือเฉพาะจำนวน/หน่วยผลิตให้เห็น ไม่เห็นตัวเงิน
-     */
-    private function maskMoney(array $data, Request $request): array
-    {
-        if ($request->user()?->hasPermission('payroll.view') || $request->user()?->hasPermission('payroll.config')) {
-            return $data;
-        }
-
-        $stripKeys = ['total_amount', 'rate_used', 'rate_at_target_override', 'rate_below_target_override', 'amount'];
-        $walk = function (&$node) use (&$walk, $stripKeys) {
-            if (! is_array($node)) return;
-            foreach ($node as $k => &$v) {
-                if (in_array($k, $stripKeys, true) && ! is_array($v)) {
-                    $v = null;
-                } elseif (is_array($v)) {
-                    $walk($v);
-                }
-            }
-        };
-        $walk($data);
-        return $data;
-    }
 
     public function index(Request $request): JsonResponse
     {
