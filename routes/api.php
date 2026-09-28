@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmploymentTypeController;
+use App\Http\Controllers\Api\CommissionController;
 use App\Http\Controllers\Api\GoodsDepositController;
 use App\Http\Controllers\Api\Dorm\DormRoomController;
 use App\Http\Controllers\Api\Dorm\ElectricityBillController;
@@ -432,6 +433,18 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     Route::middleware('permission:goods_deposits.delete')->group(function () {
         Route::delete('/goods-deposits/{deposit}', [GoodsDepositController::class, 'destroy']);
+    });
+
+    /* ========================= COMMISSIONS (ค่าคอมมิชชั่นลอย ๆ) ========================= */
+    Route::middleware('permission:commission.view')->group(function () {
+        Route::get('/commissions', [CommissionController::class, 'index']);
+        Route::get('/commissions/{commission}', [CommissionController::class, 'show']);
+    });
+    Route::middleware('permission:commission.manage')->group(function () {
+        Route::post('/commissions', [CommissionController::class, 'store']);
+        Route::put('/commissions/{commission}', [CommissionController::class, 'update']);
+        Route::post('/commissions/{commission}/status', [CommissionController::class, 'changeStatus']);
+        Route::delete('/commissions/{commission}', [CommissionController::class, 'destroy']);
     });
 
     /* ========================= ค่าไฟ/หอพัก (DORM & ELECTRICITY BILLS) ========================= */

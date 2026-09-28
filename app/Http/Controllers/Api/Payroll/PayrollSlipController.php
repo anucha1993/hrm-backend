@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Payroll;
 
 use App\Exports\PayrollSlipsExport;
 use App\Http\Controllers\Controller;
+use App\Models\Commission;
 use App\Models\GoodsDepositSlip;
 use App\Models\ElectricityBillInstallment;
 use App\Models\PayrollSlip;
@@ -99,6 +100,13 @@ class PayrollSlipController extends Controller
             'payroll_period_id' => null,
             'payslip_id' => null,
             'deducted_at' => null,
+        ]);
+        // คืนสถานะค่าคอมที่เคยดึงเข้าสลิปนี้กลับเป็น pending ก่อนลบ
+        Commission::where('payslip_id', $slip->id)->update([
+            'status' => Commission::STATUS_PENDING,
+            'payroll_period_id' => null,
+            'payslip_id' => null,
+            'paid_at' => null,
         ]);
         $slip->items()->delete();
         $slip->delete();

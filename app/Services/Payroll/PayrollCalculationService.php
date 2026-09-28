@@ -3,6 +3,7 @@
 namespace App\Services\Payroll;
 
 use App\Models\Attendance;
+use App\Models\Commission;
 use App\Models\CompensationProfile;
 use App\Models\ElectricityBillInstallment;
 use App\Models\Employee;
@@ -91,6 +92,13 @@ class PayrollCalculationService
                     'payroll_period_id' => null,
                     'payslip_id' => null,
                     'deducted_at' => null,
+                ]);
+                // เช่นเดียวกัน คืนสถานะค่าคอมที่เคยดึงเข้าสลิปเก่ากลับเป็น pending ก่อนลบ
+                Commission::where('payslip_id', $existing->id)->update([
+                    'status' => Commission::STATUS_PENDING,
+                    'payroll_period_id' => null,
+                    'payslip_id' => null,
+                    'paid_at' => null,
                 ]);
                 $existing->items()->delete();
                 $existing->delete();
@@ -230,6 +238,9 @@ class PayrollCalculationService
             $bonusTotal += $persisted['bonuses'];
             $ruleDeductions += $persisted['deductions'];
             $log['payroll_rules'] = $engineResult['log'];
+
+            // 10.6 ดึงค่าคอมมิชชั่นลอย ๆ ที่ยัง pending และ earned_date อยู่ในงวดนี้ (auto — เพิ่มเข้ารวมกับโบนัส)
+            $bonusTotal += $this->applyCommissions($slip, $employee, $period, $items, $order);
 
             // 11. หักสายตามวิธีของโปรไฟล์
             $lateDeduction = $this->computeLateDeduction($profile, $att, $hourlyRate, $dailyRate);
@@ -415,6 +426,38 @@ class PayrollCalculationService
                 'payroll_period_id' => $period->id,
                 'payslip_id' => $slip->id,
                 'deducted_at' => now(),
+            ]);
+        }
+
+        return $total;
+    }
+
+    /**
+     * ดึงค่าคอมมิชชั่นลอย ๆ ที่ยัง pending และ earned_date อยู่ในงวดนี้ — เพิ่มเป็นรายการรายได้อัตโนมัติ
+     */
+    protected function applyCommissions(PayrollSlip $slip, Employee $employee, PayrollPeriod $period, array &$items, int &$order): float
+    {
+        $commissions = Commission::where('employee_id', $employee->id)
+            ->where('status', Commission::STATUS_PENDING)
+            ->whereBetween('earned_date', [$period->start_date, $period->end_date])
+            ->orderBy('earned_date')
+            ->get();
+
+        $total = 0.0;
+        foreach ($commissions as $c) {
+            $name = $c->title ? "ค่าคอมมิชชั่น: {$c->title} ({$c->code})" : "ค่าคอมมิชชั่น ({$c->code})";
+            $items[] = $this->makeItem(
+                $slip, 'earning', 'commission', 'COMMISSION', $name,
+                (float) $c->amount, $order++, taxable: true, ssf: false,
+                referenceId: $c->id, referenceType: Commission::class,
+            );
+            $total += (float) $c->amount;
+
+            $c->update([
+                'status' => Commission::STATUS_PAID,
+                'payroll_period_id' => $period->id,
+                'payslip_id' => $slip->id,
+                'paid_at' => now(),
             ]);
         }
 
