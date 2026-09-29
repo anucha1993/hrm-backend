@@ -14,7 +14,7 @@ class DormRoomController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $q = DormRoom::with('employee:id,employee_code,first_name,last_name')->orderBy('room_no');
+        $q = DormRoom::with('employee:id,employee_code,first_name,last_name,nickname')->orderBy('room_no');
         if ($request->has('is_active')) {
             $q->where('is_active', $request->boolean('is_active'));
         }
@@ -25,14 +25,14 @@ class DormRoomController extends Controller
     {
         $data = $this->validateData($request);
         $room = DormRoom::create($data);
-        return response()->json(['data' => $room->load('employee:id,employee_code,first_name,last_name')], 201);
+        return response()->json(['data' => $room->load('employee:id,employee_code,first_name,last_name,nickname')], 201);
     }
 
     public function update(Request $request, DormRoom $room): JsonResponse
     {
         $data = $this->validateData($request, $room->id);
         $room->update($data);
-        return response()->json(['data' => $room->fresh()->load('employee:id,employee_code,first_name,last_name')]);
+        return response()->json(['data' => $room->fresh()->load('employee:id,employee_code,first_name,last_name,nickname')]);
     }
 
     public function destroy(DormRoom $room): JsonResponse

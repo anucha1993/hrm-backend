@@ -20,7 +20,7 @@ class EmployeeAdvanceController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $q = EmployeeAdvance::with(['employee:id,employee_code,first_name,last_name', 'approver:id,name', 'payer:id,name'])
+        $q = EmployeeAdvance::with(['employee:id,employee_code,first_name,last_name,nickname', 'approver:id,name', 'payer:id,name'])
             ->orderByDesc('id');
 
         if (! $user->hasPermission('advance.approve')) {

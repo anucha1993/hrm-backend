@@ -21,7 +21,7 @@ class LeaveRequestController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $q = LeaveRequest::with(['employee:id,employee_code,first_name,last_name', 'leaveType', 'reviewer:id,name'])
+        $q = LeaveRequest::with(['employee:id,employee_code,first_name,last_name,nickname', 'leaveType', 'reviewer:id,name'])
             ->orderByDesc('id');
 
         // ถ้าไม่มีสิทธิ์ดูทั้งหมด — ดูได้เฉพาะของตัวเอง
@@ -55,7 +55,7 @@ class LeaveRequestController extends Controller
     public function export(Request $request): BinaryFileResponse
     {
         $user = $request->user();
-        $q = LeaveRequest::with(['employee:id,employee_code,first_name,last_name', 'leaveType', 'reviewer:id,name'])
+        $q = LeaveRequest::with(['employee:id,employee_code,first_name,last_name,nickname', 'leaveType', 'reviewer:id,name'])
             ->orderByDesc('id');
         if (! $user->hasPermission('leave.approve') && ! $user->hasPermission('leave.config') && ! $user->hasPermission('leave.create_for_others')) {
             $q->where('employee_id', optional($user->employee)->id ?? -1);

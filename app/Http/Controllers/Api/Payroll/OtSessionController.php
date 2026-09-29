@@ -18,7 +18,7 @@ class OtSessionController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $q = OtSession::with(['employees.employee:id,employee_code,first_name,last_name'])
+        $q = OtSession::with(['employees.employee:id,employee_code,first_name,last_name,nickname'])
             ->orderByDesc('ot_date');
         if ($from = $request->date('from')) {
             $q->whereDate('ot_date', '>=', $from);
@@ -31,7 +31,7 @@ class OtSessionController extends Controller
 
     public function export(Request $request): BinaryFileResponse
     {
-        $q = OtSession::with(['employees.employee:id,employee_code,first_name,last_name'])
+        $q = OtSession::with(['employees.employee:id,employee_code,first_name,last_name,nickname'])
             ->orderByDesc('ot_date');
         if ($from = $request->date('from')) $q->whereDate('ot_date', '>=', $from);
         if ($to = $request->date('to')) $q->whereDate('ot_date', '<=', $to);

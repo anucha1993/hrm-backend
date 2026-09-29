@@ -11,7 +11,7 @@ use Illuminate\Validation\Rule;
 
 class CommissionController extends Controller
 {
-    private const RELATIONS = ['employee:id,employee_code,first_name,last_name', 'payrollPeriod:id,name,code', 'creator:id,name'];
+    private const RELATIONS = ['employee:id,employee_code,first_name,last_name,nickname', 'payrollPeriod:id,name,code', 'creator:id,name'];
 
     public function index(Request $request): JsonResponse
     {

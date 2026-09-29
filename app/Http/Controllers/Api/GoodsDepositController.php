@@ -15,7 +15,7 @@ use Illuminate\Validation\Rule;
 
 class GoodsDepositController extends Controller
 {
-    private const RELATIONS = ['employee:id,employee_code,first_name,last_name', 'items', 'payrollPeriod:id,name,code', 'creator:id,name'];
+    private const RELATIONS = ['employee:id,employee_code,first_name,last_name,nickname', 'items', 'payrollPeriod:id,name,code', 'creator:id,name'];
 
     public function index(Request $request): JsonResponse
     {

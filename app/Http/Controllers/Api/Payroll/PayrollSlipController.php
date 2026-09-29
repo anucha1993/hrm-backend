@@ -21,7 +21,7 @@ class PayrollSlipController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name', 'period:id,name,code,start_date,end_date,pay_date'])
+        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name,nickname', 'period:id,name,code,start_date,end_date,pay_date'])
             ->orderByDesc('id');
         if ($pid = $request->integer('period_id')) {
             $q->where('payroll_period_id', $pid);
@@ -44,7 +44,7 @@ class PayrollSlipController extends Controller
      */
     public function export(Request $request): BinaryFileResponse
     {
-        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name', 'period:id,name,code,start_date,end_date,pay_date'])
+        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name,nickname', 'period:id,name,code,start_date,end_date,pay_date'])
             ->orderByDesc('id');
         if ($pid = $request->integer('period_id')) $q->where('payroll_period_id', $pid);
         if ($eid = $request->integer('employee_id')) $q->where('employee_id', $eid);

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class WorkOrderExtraItem extends Model
 {
     protected $fillable = [
-        'work_order_id', 'name', 'unit', 'qty', 'rate', 'amount', 'note', 'sort_order',
+        'work_order_id', 'name', 'unit', 'qty', 'rate', 'amount', 'deduction_type', 'note', 'sort_order',
     ];
 
     protected $casts = [

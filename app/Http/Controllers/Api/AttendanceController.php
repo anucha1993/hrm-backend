@@ -177,7 +177,7 @@ class AttendanceController extends Controller
     /** ดูประวัติทั้งหมด (สำหรับ admin) */
     public function index(Request $request): JsonResponse
     {
-        $q = Attendance::with(['employee:id,employee_code,first_name,last_name,department_id', 'employee.department:id,code,name', 'officeLocation'])
+        $q = Attendance::with(['employee:id,employee_code,first_name,last_name,nickname,department_id', 'employee.department:id,code,name', 'officeLocation'])
             ->orderBy('checked_at', 'desc');
 
         if ($id = $request->integer('employee_id')) $q->where('employee_id', $id);
@@ -334,6 +334,7 @@ class AttendanceController extends Controller
                     'employee_code' => $employee->employee_code,
                     'first_name'    => $employee->first_name,
                     'last_name'     => $employee->last_name,
+                    'nickname'      => $employee->nickname,
                     'department'    => $employee->department ? ['id' => $employee->department->id, 'name' => $employee->department->name] : null,
                 ],
                 'date'        => $dateStr,
@@ -461,7 +462,7 @@ class AttendanceController extends Controller
         ]);
 
         return response()->json([
-            'data' => $attendance->load(['employee:id,employee_code,first_name,last_name', 'workShift', 'officeLocation', 'editor:id,name']),
+            'data' => $attendance->load(['employee:id,employee_code,first_name,last_name,nickname', 'workShift', 'officeLocation', 'editor:id,name']),
             'message' => 'เพิ่มเวลาย้อนหลังเรียบร้อย',
         ], 201);
     }
@@ -704,7 +705,7 @@ class AttendanceController extends Controller
         ]);
 
         return response()->json([
-            'data' => $attendance->fresh(['employee:id,employee_code,first_name,last_name', 'workShift', 'officeLocation', 'editor:id,name']),
+            'data' => $attendance->fresh(['employee:id,employee_code,first_name,last_name,nickname', 'workShift', 'officeLocation', 'editor:id,name']),
             'message' => 'แก้ไขเวลาเรียบร้อย',
         ]);
     }

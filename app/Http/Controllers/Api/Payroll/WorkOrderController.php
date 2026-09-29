@@ -67,7 +67,7 @@ class WorkOrderController extends Controller
                     'total_amount' => $w->total_amount,
                     'team_leader_id' => $w->team_leader_id,
                     'team_leader_code' => $w->teamLeader?->employee_code,
-                    'team_leader_name' => $w->teamLeader ? trim($w->teamLeader->first_name . ' ' . $w->teamLeader->last_name) : null,
+                    'team_leader_name' => $w->teamLeader ? trim($w->teamLeader->first_name . ' ' . $w->teamLeader->last_name) . ($w->teamLeader->nickname ? " ({$w->teamLeader->nickname})" : '') : null,
                 ])
                 ->values();
         }
@@ -348,8 +348,8 @@ class WorkOrderController extends Controller
 
         if ($status !== 'all') $q->where('a.status', $status);
 
-        $rows = $q->groupBy('a.team_leader_id', 'emp.employee_code', 'emp.first_name', 'emp.last_name')
-            ->selectRaw('a.team_leader_id as employee_id, emp.employee_code, emp.first_name, emp.last_name,
+        $rows = $q->groupBy('a.team_leader_id', 'emp.employee_code', 'emp.first_name', 'emp.last_name', 'emp.nickname')
+            ->selectRaw('a.team_leader_id as employee_id, emp.employee_code, emp.first_name, emp.last_name, emp.nickname,
                 COUNT(a.id) as work_orders_count,
                 SUM(a.total_amount) as total_amount')
             ->orderBy('emp.employee_code')
@@ -467,6 +467,7 @@ class WorkOrderController extends Controller
             'extras.*.qty' => ['required_with:extras', 'numeric', 'min:0'],
             // ราคา/หน่วยติดลบได้ ใช้แทนรายการหัก (เช่น หักค่าเสียหาย) ในตารางเดียวกันกับรายการจ่ายเพิ่มเติม
             'extras.*.rate' => ['required_with:extras', 'numeric'],
+            'extras.*.deduction_type' => ['nullable', Rule::in(['advance', 'goods', 'electric', 'insurance'])],
             'extras.*.note' => ['nullable', 'string', 'max:500'],
         ]);
     }
@@ -558,6 +559,7 @@ class WorkOrderController extends Controller
                 'qty' => $qty,
                 'rate' => $rate,
                 'amount' => round($qty * $rate, 2),
+                'deduction_type' => $e['deduction_type'] ?? null,
                 'note' => $e['note'] ?? null,
                 'sort_order' => $idx,
             ]);

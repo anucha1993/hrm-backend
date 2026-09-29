@@ -28,7 +28,7 @@ class ElectricityBillController extends Controller
     public function show(ElectricityBill $bill): JsonResponse
     {
         $bill->load(['items' => function ($q) {
-            $q->with(['room', 'employee:id,employee_code,first_name,last_name', 'installments'])->orderBy('order');
+            $q->with(['room', 'employee:id,employee_code,first_name,last_name,nickname', 'installments'])->orderBy('order');
         }, 'creator:id,name']);
         return response()->json(['data' => $bill]);
     }
