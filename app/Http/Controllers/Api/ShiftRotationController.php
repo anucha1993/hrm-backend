@@ -26,7 +26,7 @@ class ShiftRotationController extends Controller
     public function show(ShiftRotation $shiftRotation): JsonResponse
     {
         $shiftRotation->load([
-            'assignments.employee:id,employee_code,title,first_name,last_name,birth_date,department_id',
+            'assignments.employee:id,employee_code,title,first_name,last_name,nickname,birth_date,department_id',
             'assignments.employee.department:id,name',
         ]);
 
@@ -74,7 +74,7 @@ class ShiftRotationController extends Controller
             'effective_to'   => $data['effective_to'] ?? null,
         ]);
 
-        $assignment->load('employee:id,employee_code,title,first_name,last_name,birth_date,department_id');
+        $assignment->load('employee:id,employee_code,title,first_name,last_name,nickname,birth_date,department_id');
 
         return response()->json(['data' => $assignment], 201);
     }

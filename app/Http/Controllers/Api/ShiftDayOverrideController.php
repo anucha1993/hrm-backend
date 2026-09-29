@@ -14,7 +14,7 @@ class ShiftDayOverrideController extends Controller
     {
         $q = ShiftDayOverride::query()
             ->with([
-                'employee:id,employee_code,title,first_name,last_name,birth_date,department_id',
+                'employee:id,employee_code,title,first_name,last_name,nickname,birth_date,department_id',
                 'workShift:id,name,start_time,end_time',
             ])
             ->orderByDesc('date');
@@ -74,7 +74,7 @@ class ShiftDayOverrideController extends Controller
         );
 
         $override->load([
-            'employee:id,employee_code,title,first_name,last_name,birth_date,department_id',
+            'employee:id,employee_code,title,first_name,last_name,nickname,birth_date,department_id',
             'workShift:id,name,start_time,end_time',
         ]);
 

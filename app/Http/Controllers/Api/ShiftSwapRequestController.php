@@ -21,8 +21,8 @@ class ShiftSwapRequestController extends Controller
     }
 
     private const RELATIONS = [
-        'requester:id,employee_code,title,first_name,last_name,birth_date,department_id',
-        'counterparty:id,employee_code,title,first_name,last_name,birth_date,department_id',
+        'requester:id,employee_code,title,first_name,last_name,nickname,birth_date,department_id',
+        'counterparty:id,employee_code,title,first_name,last_name,nickname,birth_date,department_id',
         'requesterShift:id,name,start_time,end_time',
         'counterpartyShift:id,name,start_time,end_time',
         'approver:id,name',
