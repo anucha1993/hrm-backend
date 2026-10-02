@@ -70,6 +70,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'production' => [
                 'production.view'   => 'ดูกำหนดการจ่ายการผลิต (เรทค่าจ้าง/ใบจ่ายงาน)',
                 'production.manage' => 'จัดการกำหนดการจ่ายการผลิต (เรทค่าจ้าง/ใบจ่ายงาน)',
+                'production.backdate' => 'ลงงาน/บันทึกผลรายวันย้อนหลังได้ (เลือกวันที่ก่อนวันนี้)',
             ],
             'goods_deposits' => [
                 'goods_deposits.view'   => 'ดูใบมัดจำของใช้ทั่วไป',
@@ -178,7 +179,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'employees.view', 'employees.create', 'employees.update',
             'attendance.view', 'attendance.manage', 'attendance.summary.view',
             'payroll.view', 'payroll.compute', 'payroll.config', 'payroll.ot_manage',
-            'production.view', 'production.manage',
+            'production.view', 'production.manage', 'production.backdate',
             'leave.request', 'leave.approve', 'leave.config',
             'advance.request', 'advance.approve',
             'reports.view',

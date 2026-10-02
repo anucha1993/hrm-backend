@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class WorkOrderController extends Controller
 {
@@ -82,6 +83,8 @@ class WorkOrderController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validateData($request);
+        // ใบงานต้องครอบคลุมวันนี้ขึ้นไป (วันเริ่มย้อนได้ตามรอบตัดวิก แต่ห้ามสร้างใบของช่วงที่จบไปแล้ว)
+        $this->denyBackdate($request, $data['end_date'], 'end_date');
 
         $wo = DB::transaction(function () use ($data, $request) {
             $wo = WorkOrder::create([
@@ -114,6 +117,12 @@ class WorkOrderController extends Controller
         }
 
         $data = $this->validateData($request, true);
+        // เช็คเฉพาะตอนเปลี่ยนช่วงวันที่ — ใบงานเดิมยังแก้ส่วนอื่นได้ตามปกติ
+        $datesChanged = (isset($data['start_date']) && substr($data['start_date'], 0, 10) !== $workOrder->start_date->format('Y-m-d'))
+            || (isset($data['end_date']) && substr($data['end_date'], 0, 10) !== $workOrder->end_date->format('Y-m-d'));
+        if ($datesChanged) {
+            $this->denyBackdate($request, $data['end_date'] ?? $workOrder->end_date->format('Y-m-d'), 'end_date');
+        }
 
         DB::transaction(function () use ($workOrder, $data) {
             $workOrder->update(array_filter([
@@ -219,6 +228,7 @@ class WorkOrderController extends Controller
             return response()->json(['message' => 'ใบงานนี้จ่ายเงินแล้ว'], 422);
         }
         $data = $this->validateDailyEntry($request, $workOrder);
+        $this->denyBackdate($request, $data['work_date'], 'work_date');
 
         DB::transaction(function () use ($workOrder, $data) {
             $entry = WorkOrderDailyEntry::updateOrCreate(
@@ -248,6 +258,9 @@ class WorkOrderController extends Controller
             return response()->json(['message' => 'ใบงานนี้จ่ายเงินแล้ว'], 422);
         }
         $data = $this->validateDailyEntry($request, $workOrder);
+        if (substr($data['work_date'], 0, 10) !== $dailyEntry->work_date->format('Y-m-d')) {
+            $this->denyBackdate($request, $data['work_date'], 'work_date');
+        }
 
         DB::transaction(function () use ($dailyEntry, $workOrder, $data) {
             $dailyEntry->update([
@@ -438,6 +451,25 @@ class WorkOrderController extends Controller
     }
 
     // ---------- helpers ----------
+
+    /**
+     * กันลงงานย้อนหลัง — ผู้ที่ไม่มีสิทธิ์ production.backdate ใช้วันที่ก่อนวันนี้ไม่ได้
+     * ใบงาน: วันสิ้นสุดต้อง >= วันนี้ / บันทึกผลรายวัน: วันที่ต้อง >= วันนี้
+     * (วันนี้คิดตามเวลาไทย เพราะ app timezone เป็น UTC)
+     */
+    private function denyBackdate(Request $request, ?string $date, string $field): void
+    {
+        if (! $date || $request->user()?->hasPermission('production.backdate')) {
+            return;
+        }
+        $today = now('Asia/Bangkok');
+        if (substr($date, 0, 10) < $today->toDateString()) {
+            $msg = $field === 'work_date'
+                ? 'ไม่มีสิทธิ์บันทึกผลย้อนหลัง — เลือกได้ตั้งแต่วันนี้ (' . $today->format('d/m/Y') . ') เป็นต้นไป'
+                : 'ไม่มีสิทธิ์ลงงานย้อนหลัง — ช่วงงานต้องสิ้นสุดตั้งแต่วันนี้ (' . $today->format('d/m/Y') . ') เป็นต้นไป';
+            throw ValidationException::withMessages([$field => $msg]);
+        }
+    }
 
     private function validateData(Request $request, bool $partial = false): array
     {
