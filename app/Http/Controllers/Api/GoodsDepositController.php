@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\GuardsBackdate;
 use App\Models\Employee;
 use App\Models\GoodsDepositSlip;
 use App\Models\PayrollSlip;
@@ -15,6 +16,8 @@ use Illuminate\Validation\Rule;
 
 class GoodsDepositController extends Controller
 {
+    use GuardsBackdate;
+
     private const RELATIONS = ['employee:id,employee_code,first_name,last_name,nickname', 'items', 'payrollPeriod:id,name,code', 'creator:id,name'];
 
     public function index(Request $request): JsonResponse
@@ -53,6 +56,7 @@ class GoodsDepositController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validateData($request);
+        $this->denyBackdate($request, $data['deposit_date'], 'deposit_date', 'goods_deposits.backdate');
 
         return DB::transaction(function () use ($data, $request) {
             $depositDate = Carbon::parse($data['deposit_date']);
@@ -121,6 +125,10 @@ class GoodsDepositController extends Controller
         }
 
         $data = $this->validateData($request, $deposit->id);
+        // เช็คเฉพาะตอนเปลี่ยนวันที่ — ใบเดิมยังแก้รายการได้ตามปกติ
+        if (substr($data['deposit_date'], 0, 10) !== $deposit->deposit_date->format('Y-m-d')) {
+            $this->denyBackdate($request, $data['deposit_date'], 'deposit_date', 'goods_deposits.backdate');
+        }
 
         return DB::transaction(function () use ($data, $deposit) {
             $deposit->update([

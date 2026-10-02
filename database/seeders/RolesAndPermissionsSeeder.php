@@ -48,6 +48,7 @@ class RolesAndPermissionsSeeder extends Seeder
                 'leave.approve' => 'อนุมัติใบลา',
                 'leave.create_for_others' => 'สร้าง/ยื่นใบลาแทนพนักงานอื่น',
                 'leave.config' => 'ตั้งค่าประเภทการลา / โควต้า',
+                'leave.backdate' => 'ยื่นใบลาย้อนหลังได้ (เลือกวันที่ก่อนวันนี้)',
             ],
             'advance' => [
                 'advance.request' => 'ยื่นคำขอเบิกเงินล่วงหน้า และดูของตนเอง',
@@ -77,6 +78,7 @@ class RolesAndPermissionsSeeder extends Seeder
                 'goods_deposits.create' => 'เพิ่มใบมัดจำของใช้ทั่วไป',
                 'goods_deposits.update' => 'แก้ไข/ตัดยอดใบมัดจำของใช้ทั่วไป',
                 'goods_deposits.delete' => 'ลบใบมัดจำของใช้ทั่วไป',
+                'goods_deposits.backdate' => 'ลงใบมัดจำย้อนหลังได้ (เลือกวันที่ก่อนวันนี้)',
             ],
             'dorm' => [
                 'dorm.view'   => 'ดูห้องพัก/ใบค่าไฟ',
@@ -180,11 +182,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'attendance.view', 'attendance.manage', 'attendance.summary.view',
             'payroll.view', 'payroll.compute', 'payroll.config', 'payroll.ot_manage',
             'production.view', 'production.manage', 'production.backdate',
-            'leave.request', 'leave.approve', 'leave.config',
+            'leave.request', 'leave.approve', 'leave.config', 'leave.backdate',
             'advance.request', 'advance.approve',
             'reports.view',
             'master_data.manage',
-            'goods_deposits.view', 'goods_deposits.create', 'goods_deposits.update', 'goods_deposits.delete',
+            'goods_deposits.view', 'goods_deposits.create', 'goods_deposits.update', 'goods_deposits.delete', 'goods_deposits.backdate',
             'dorm.view', 'dorm.manage',
             'commission.view', 'commission.manage',
         ];

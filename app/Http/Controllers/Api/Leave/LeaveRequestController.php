@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Leave;
 
 use App\Exports\LeaveRequestsExport;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\GuardsBackdate;
 use App\Models\LeaveBalance;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
@@ -16,6 +17,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class LeaveRequestController extends Controller
 {
+    use GuardsBackdate;
+
     public function __construct(protected LeaveService $service) {}
 
     public function index(Request $request): JsonResponse
@@ -104,6 +107,7 @@ class LeaveRequestController extends Controller
             $rules['employee_id'] = ['required', 'exists:employees,id'];
         }
         $data = $request->validate($rules);
+        $this->denyBackdate($request, $data['start_date'], 'start_date', 'leave.backdate');
 
         if (! isset($data['employee_id'])) {
             $data['employee_id'] = optional($user->employee)->id;
