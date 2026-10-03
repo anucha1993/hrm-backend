@@ -23,17 +23,31 @@ class WorkOrderController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $filters = function ($q) use ($request) {
+            if ($from = $request->date('from')) $q->where('end_date', '>=', $from);
+            if ($to = $request->date('to')) $q->where('start_date', '<=', $to);
+            if ($status = $request->string('status')->toString()) $q->where('status', $status);
+            if ($periodType = $request->string('period_type')->toString()) $q->where('period_type', $periodType);
+            if ($leaderId = $request->integer('team_leader_id')) $q->where('team_leader_id', $leaderId);
+            if ($periodId = $request->integer('payroll_period_id')) $q->where('payroll_period_id', $periodId);
+            if ($batchCode = $request->string('batch_code')->toString()) $q->where('batch_code', $batchCode);
+            if ($code = $request->string('code')->toString()) $q->where('code', 'like', "%{$code}%");
+        };
+
         $q = WorkOrder::with(['teamLeader', 'payrollPeriod', 'items.rateItem'])
             ->withCount(['items', 'members', 'dailyEntries']);
 
-        if ($from = $request->date('from')) $q->where('end_date', '>=', $from);
-        if ($to = $request->date('to')) $q->where('start_date', '<=', $to);
-        if ($status = $request->string('status')->toString()) $q->where('status', $status);
-        if ($periodType = $request->string('period_type')->toString()) $q->where('period_type', $periodType);
-        if ($leaderId = $request->integer('team_leader_id')) $q->where('team_leader_id', $leaderId);
-        if ($periodId = $request->integer('payroll_period_id')) $q->where('payroll_period_id', $periodId);
-        if ($batchCode = $request->string('batch_code')->toString()) $q->where('batch_code', $batchCode);
-        if ($code = $request->string('code')->toString()) $q->where('code', 'like', "%{$code}%");
+        // with_batch=1 → ดึงใบงานในลอตผลิตเดียวกันมาด้วยเสมอ แม้ใบนั้นจะไม่ตรงตัวกรอง (ให้แสดงคู่กันได้ครบ)
+        if ($request->boolean('with_batch')) {
+            $batchCodes = WorkOrder::query()->where($filters)->whereNotNull('batch_code')
+                ->distinct()->pluck('batch_code');
+            $q->where(function ($w) use ($filters, $batchCodes) {
+                $w->where($filters);
+                if ($batchCodes->isNotEmpty()) $w->orWhereIn('batch_code', $batchCodes);
+            });
+        } else {
+            $q->where($filters);
+        }
 
         $rows = $q->orderByDesc('start_date')->orderByDesc('id')
             ->paginate(min(100, (int) $request->integer('per_page', 30)));
