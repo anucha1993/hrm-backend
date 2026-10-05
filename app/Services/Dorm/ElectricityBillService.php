@@ -106,6 +106,7 @@ class ElectricityBillService
 
                 // อัปเดตเลขมิเตอร์ล่าสุดของห้อง เพื่อใช้เป็นเลขก่อนของบิลรอบถัดไป
                 $item->room->update(['last_meter_reading' => $item->meter_end]);
+                $this->carryMeterToLaterDrafts($bill, $item);
 
                 if ($item->employee_id) {
                     $half1 = round((float) $item->total_amount / 2, 2);
@@ -142,6 +143,27 @@ class ElectricityBillService
             throw new RuntimeException('บิลนี้ปิดรอบแล้ว ไม่สามารถลบได้');
         }
         $bill->delete();
+    }
+
+    /**
+     * บิลเดือนถัดไปที่สร้างไว้ก่อนปิดรอบบิลนี้ (ยังเป็น draft) จะดึงเลขมิเตอร์ก่อนแบบเก่ามา
+     * → ตอนปิดรอบให้ส่งเลขมิเตอร์หลังของรอบนี้ไปเป็นเลขก่อนของบิลถัดไปที่ใกล้ที่สุดของห้องเดียวกัน
+     */
+    private function carryMeterToLaterDrafts(ElectricityBill $bill, ElectricityBillItem $item): void
+    {
+        $next = ElectricityBillItem::where('dorm_room_id', $item->dorm_room_id)
+            ->whereHas('bill', fn ($q) => $q
+                ->where('status', ElectricityBill::STATUS_DRAFT)
+                ->where('bill_month', '>', $bill->bill_month))
+            ->join('electricity_bills', 'electricity_bills.id', '=', 'electricity_bill_items.electricity_bill_id')
+            ->orderBy('electricity_bills.bill_month')
+            ->select('electricity_bill_items.*')
+            ->first();
+
+        if ($next && (string) $next->meter_start !== (string) $item->meter_end) {
+            $next->meter_start = $item->meter_end;
+            $next->recompute();
+        }
     }
 
     private function assertDraft(ElectricityBill $bill): void
