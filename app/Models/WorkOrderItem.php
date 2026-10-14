@@ -12,7 +12,7 @@ class WorkOrderItem extends Model
         'work_order_id', 'production_rate_item_id',
         'target_qty', 'actual_qty_total',
         'rate_at_target_override', 'rate_below_target_override',
-        'rate_used', 'total_amount', 'sort_order',
+        'rate_used', 'total_amount', 'sort_order', 'product_name',
     ];
 
     protected $casts = [

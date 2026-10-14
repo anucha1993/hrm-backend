@@ -481,6 +481,7 @@ class WorkOrderController extends Controller
             'items.*.target_qty' => ['required', 'numeric', 'min:0'],
             'items.*.rate_at_target_override' => ['nullable', 'numeric', 'min:0'],
             'items.*.rate_below_target_override' => ['nullable', 'numeric', 'min:0'],
+            'items.*.product_name' => ['nullable', 'string', 'max:255'],
             'members' => ['sometimes', 'array'],
             'members.*.employee_id' => ['required', 'exists:employees,id'],
             'members.*.role' => ['nullable', 'string', 'max:50'],
@@ -523,6 +524,7 @@ class WorkOrderController extends Controller
                 'target_qty' => $it['target_qty'],
                 'rate_at_target_override' => $it['rate_at_target_override'] ?? null,
                 'rate_below_target_override' => $it['rate_below_target_override'] ?? null,
+                'product_name' => $it['product_name'] ?? null,
                 'sort_order' => $idx,
             ]);
         }
@@ -544,6 +546,7 @@ class WorkOrderController extends Controller
                 'target_qty' => $it['target_qty'],
                 'rate_at_target_override' => $it['rate_at_target_override'] ?? null,
                 'rate_below_target_override' => $it['rate_below_target_override'] ?? null,
+                'product_name' => $it['product_name'] ?? null,
                 'sort_order' => $idx,
             ];
             if ($id && in_array($id, $existingIds, true)) {
