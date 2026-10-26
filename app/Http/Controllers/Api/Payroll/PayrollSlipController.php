@@ -12,6 +12,7 @@ use App\Models\PayrollSlipItem;
 use App\Services\Payroll\PayrollApprovalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -21,7 +22,7 @@ class PayrollSlipController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name,nickname', 'period:id,name,code,start_date,end_date,pay_date'])
+        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name,nickname,department_id', 'employee.department:id,name', 'period:id,name,code,start_date,end_date,pay_date'])
             ->orderByDesc('id');
         if ($pid = $request->integer('period_id')) {
             $q->where('payroll_period_id', $pid);
@@ -44,7 +45,7 @@ class PayrollSlipController extends Controller
      */
     public function export(Request $request): BinaryFileResponse
     {
-        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name,nickname', 'period:id,name,code,start_date,end_date,pay_date'])
+        $q = PayrollSlip::with(['employee:id,employee_code,first_name,last_name,nickname,department_id', 'employee.department:id,name', 'period:id,name,code,start_date,end_date,pay_date'])
             ->orderByDesc('id');
         if ($pid = $request->integer('period_id')) $q->where('payroll_period_id', $pid);
         if ($eid = $request->integer('employee_id')) $q->where('employee_id', $eid);
@@ -88,6 +89,20 @@ class PayrollSlipController extends Controller
         if (in_array($slip->status, ['approved', 'paid'])) {
             return response()->json(['message' => 'สลิปนี้ปิดแล้ว ลบไม่ได้'], 422);
         }
+        $this->deleteSlip($slip);
+        return response()->json(['message' => 'ลบเรียบร้อย']);
+    }
+
+    /**
+     * ลบสลิป + คืนรายการหักอัตโนมัติ (มัดจำของใช้/ค่าไฟ-ค่าห้อง/ค่าคอม) กลับเป็น pending
+     * ให้งวดอื่นดึงไปตัดได้ — ใช้ทั้งลบทีละใบและลบหลายใบ (เช่น เอาพนักงานที่ไม่เกี่ยวออกจากงวด)
+     */
+    private function deleteSlip(PayrollSlip $slip): void
+    {
+        if (in_array($slip->status, ['approved', 'paid'])) {
+            throw new \RuntimeException('สลิปนี้อนุมัติ/จ่ายแล้ว ลบไม่ได้');
+        }
+        DB::transaction(function () use ($slip) {
         // คืนสถานะใบมัดจำของใช้ทั่วไปที่เคยตัดไว้ในสลิปนี้กลับเป็น pending ก่อนลบ
         GoodsDepositSlip::where('payslip_id', $slip->id)->update([
             'status' => GoodsDepositSlip::STATUS_PENDING,
@@ -108,9 +123,11 @@ class PayrollSlipController extends Controller
             'payslip_id' => null,
             'paid_at' => null,
         ]);
+        // ปลดรอบ OT ที่ผูกกับสลิปนี้ ให้สลิปของงวดอื่นผูกได้
+        \App\Models\OtSessionEmployee::where('payroll_slip_id', $slip->id)->update(['payroll_slip_id' => null]);
         $slip->items()->delete();
         $slip->delete();
-        return response()->json(['message' => 'ลบเรียบร้อย']);
+        });
     }
 
     public function submitL1(PayrollSlip $slip, Request $request): JsonResponse
@@ -209,7 +226,7 @@ class PayrollSlipController extends Controller
         $data = $request->validate([
             'slip_ids' => ['required', 'array', 'min:1'],
             'slip_ids.*' => ['integer', 'exists:payroll_slips,id'],
-            'action' => ['required', 'in:submit_l1,approve_l1,reject_l1,approve_l2,reject_l2,mark_paid,cancel'],
+            'action' => ['required', 'in:submit_l1,approve_l1,reject_l1,approve_l2,reject_l2,mark_paid,cancel,delete'],
             'note' => ['nullable', 'string'],
             'payment_reference' => ['nullable', 'string'],
         ]);
@@ -217,6 +234,21 @@ class PayrollSlipController extends Controller
         $note = $data['note'] ?? null;
         $ok = [];
         $errors = [];
+
+        // ลบสลิปหลายใบ (เอาพนักงานที่ไม่เกี่ยวออกจากงวด) — ต้องมีสิทธิ์คำนวณเงินเดือนเหมือนปุ่มคำนวณ
+        if ($data['action'] === 'delete') {
+            abort_unless($request->user()->hasPermission('payroll.compute'), 403, 'ไม่มีสิทธิ์ลบสลิป');
+            foreach (PayrollSlip::whereIn('id', $data['slip_ids'])->get() as $slip) {
+                try {
+                    $this->deleteSlip($slip);
+                    $ok[] = ['slip_id' => $slip->id, 'status' => 'deleted'];
+                } catch (\Throwable $e) {
+                    $errors[] = ['slip_id' => $slip->id, 'message' => $e->getMessage()];
+                }
+            }
+            return response()->json(['data' => ['success' => $ok, 'errors' => $errors]]);
+        }
+
         foreach (PayrollSlip::whereIn('id', $data['slip_ids'])->get() as $slip) {
             try {
                 $result = match ($data['action']) {
