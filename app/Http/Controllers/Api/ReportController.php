@@ -189,7 +189,7 @@ class ReportController extends Controller
             return [
                 'employee_id'     => $emp->id,
                 'employee_code'   => $emp->employee_code,
-                'employee_name'   => trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')),
+                'employee_name'   => trim(trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')) . ($emp->nickname ? " ({$emp->nickname})" : '')),
                 'department'      => optional($emp->department)->name,
                 'no_track'        => $isNoTrack,
                 'present_days'    => $presentDays,
@@ -230,7 +230,7 @@ class ReportController extends Controller
         return $this->csvStream("attendance-{$from->toDateString()}-{$to->toDateString()}.csv", $headers, $rows->map(fn ($r) => [
             $r->checked_at->format('Y-m-d H:i'),
             $r->employee?->employee_code,
-            trim(($r->employee?->first_name ?? '') . ' ' . ($r->employee?->last_name ?? '')),
+            trim(trim(($r->employee?->first_name ?? '') . ' ' . ($r->employee?->last_name ?? '')) . ($r->employee?->nickname ? " ({$r->employee->nickname})" : '')),
             optional($r->employee?->department)->name,
             $r->type,
             $r->status,
@@ -484,7 +484,7 @@ class ReportController extends Controller
             $headers,
             $rows->map(fn ($r) => [
                 $r->employee?->employee_code,
-                trim(($r->employee?->first_name ?? '') . ' ' . ($r->employee?->last_name ?? '')),
+                trim(trim(($r->employee?->first_name ?? '') . ' ' . ($r->employee?->last_name ?? '')) . ($r->employee?->nickname ? " ({$r->employee->nickname})" : '')),
                 optional($r->employee?->department)->name,
                 $r->leaveType?->name,
                 $r->start_date ? Carbon::parse($r->start_date)->toDateString() : null,
@@ -510,7 +510,7 @@ class ReportController extends Controller
             $headers,
             $rows->map(fn ($r) => [
                 $r->employee?->employee_code,
-                trim(($r->employee?->first_name ?? '') . ' ' . ($r->employee?->last_name ?? '')),
+                trim(trim(($r->employee?->first_name ?? '') . ' ' . ($r->employee?->last_name ?? '')) . ($r->employee?->nickname ? " ({$r->employee->nickname})" : '')),
                 optional($r->employee?->department)->name,
                 $r->session?->ot_date ? Carbon::parse($r->session->ot_date)->toDateString() : null,
                 $r->hours,
